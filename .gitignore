@@ -1,0 +1,5 @@
+dist/
+*.syso
+__pycache__/
+*.key
+publish-out/
