@@ -1,0 +1,30 @@
+name: build launcher
+on:
+  push:
+    branches: [main]
+  pull_request:
+  release:
+    types: [published]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.24' }
+      - run: go vet ./... && GOOS=windows go vet ./...
+      - run: go test ./...
+      - name: build exe
+        env:
+          VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || '0.0.0-dev' }}
+          PUBKEY: ${{ secrets.LAUNCHER_PUBKEY }}
+          MANIFEST_URL: ${{ vars.MANIFEST_URL }}
+        run: VERSION="${VERSION#v}" ./build.sh
+      - uses: actions/upload-artifact@v4
+        with: { name: launcher, path: dist/*.exe }
+      - name: attach to release
+        if: github.event_name == 'release'
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: gh release upload "${{ github.event.release.tag_name }}" "dist/RoM2 Launcher.exe" --clobber
