@@ -6,7 +6,9 @@ and starts `allods2.exe -hat biffinboys.ddns.net`.
 
 ## For players
 1. Download `RoM2 Launcher.exe` (link on biffinboys.com/rom2) and put it anywhere, e.g. the Desktop.
-2. Run it. The game goes to `C:\Users\<you>\Games\Rage of Mages 2` unless you click **Change…**.
+2. Run it. The game goes to `C:\Allods2` unless you click **Folder** (if `C:\` can't be written to, it uses `%USERPROFILE%\Games\Allods2` and notes why in `.a2launcher\launcher.log`). If the exe is placed inside an existing game folder it uses that folder, and the chosen folder is remembered.
+
+   Note: the BiffinBoys *server* also lives at `C:\Allods2` on the server VM. That is unrelated: players install on their own PCs. Don't run the launcher on the server VM with the default folder, or pick another folder there.
 3. Press **PLAY**. First run downloads the whole game; later runs take seconds. The launcher hides while you play and exits when the game closes; if the game crashes it saves a report under `.a2launcher\crash\`.
 4. If the game acts strange, press **Repair files**. Your `allods2.cfg` and `ddraw.ini` settings are never overwritten.
 

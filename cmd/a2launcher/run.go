@@ -247,5 +247,9 @@ func installDir(cfg core.Config) string {
 			return d
 		}
 	}
-	return core.DefaultInstallDir()
+	d, note := core.DefaultInstallDir()
+	if note != "" {
+		core.Logf(d, "%s", note)
+	}
+	return d
 }

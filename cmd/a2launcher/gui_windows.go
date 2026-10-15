@@ -3,8 +3,12 @@
 package main
 
 // The window is plain Win32 painted with GDI: the skin package renders the
-// whole frame (game art + text) into an image, and WM_PAINT blits it with
-// SetDIBitsToDevice. This keeps every pixel in the game's style (walk/common
+// frame (game art, title and button labels in the game font) into an image,
+// WM_PAINT blits it at a whole-number scale (nearest neighbour) and then draws
+// the body text (news, status, folder) with GDI ClearType Segoe UI at the real
+// device size. The process is per-monitor DPI aware (manifest), so Windows
+// never bitmap-stretches the window: that stretching was what made v1.1.0
+// blurry. This keeps every pixel in the game's style (walk/common
 // controls cannot draw skull frames or the game font), needs no extra
 // dependency beyond golang.org/x/sys, and the exact same Render code makes the
 // headless preview (cmd/uipreview).
@@ -51,7 +55,7 @@ var (
 	pPostMessage       = user32.NewProc("PostMessageW")
 	pPostQuitMessage   = user32.NewProc("PostQuitMessage")
 	pShowWindow        = user32.NewProc("ShowWindow")
-	pAllowSetFg = user32.NewProc("AllowSetForegroundWindow")
+	pAllowSetFg        = user32.NewProc("AllowSetForegroundWindow")
 	pBeginPaint        = user32.NewProc("BeginPaint")
 	pEndPaint          = user32.NewProc("EndPaint")
 	pInvalidateRect    = user32.NewProc("InvalidateRect")
@@ -68,6 +72,18 @@ var (
 	pCreateIconFromRes = user32.NewProc("CreateIconFromResourceEx")
 	pTrackMouseEvent   = user32.NewProc("TrackMouseEvent")
 	pDestroyWindow     = user32.NewProc("DestroyWindow")
+	pGetDpiForWindow   = user32.NewProc("GetDpiForWindow")
+	pSetWindowPos      = user32.NewProc("SetWindowPos")
+	pBitBlt            = gdi32.NewProc("BitBlt")
+	pCreateCompatDC    = gdi32.NewProc("CreateCompatibleDC")
+	pCreateCompatBmp   = gdi32.NewProc("CreateCompatibleBitmap")
+	pSelectObject      = gdi32.NewProc("SelectObject")
+	pDeleteDC          = gdi32.NewProc("DeleteDC")
+	pCreateFont        = gdi32.NewProc("CreateFontW")
+	pSetBkMode         = gdi32.NewProc("SetBkMode")
+	pSetTextColor      = gdi32.NewProc("SetTextColor")
+	pTextOut           = gdi32.NewProc("TextOutW")
+	pGetTextExtent     = gdi32.NewProc("GetTextExtentPoint32W")
 	pSetDIBits         = gdi32.NewProc("SetDIBitsToDevice")
 	pCreateRectRgn     = gdi32.NewProc("CreateRectRgn")
 	pCombineRgn        = gdi32.NewProc("CombineRgn")
@@ -94,6 +110,7 @@ const (
 	wmMouseWheel  = 0x020A
 	wmMouseLeave  = 0x02A3
 	wmApp         = 0x8000
+	wmDPIChanged  = 0x02E0
 
 	htClient  = 1
 	htCaption = 2
@@ -162,6 +179,55 @@ type winUI struct {
 	queue    []func()
 	qmu      sync.Mutex
 	tracking bool
+	ops      []skin.TextOp
+	font     *gdiFont
+}
+
+// gdiFont is the crisp body font: Segoe UI with ClearType, created at the
+// window's device scale. It implements skin.BodyFont in skin pixels.
+type gdiFont struct {
+	hfont, dc uintptr
+	k         int
+}
+
+func newGDIFont(k int) *gdiFont {
+	face, _ := syscall.UTF16PtrFromString("Segoe UI")
+	h := -13 * k // 13 skin px tall characters, like the game font
+	hf, _, _ := pCreateFont.Call(uintptr(h), 0, 0, 0, 400, 0, 0, 0, 1 /*DEFAULT_CHARSET*/, 0, 0,
+		5 /*CLEARTYPE_QUALITY*/, 0, uintptr(unsafe.Pointer(face)))
+	dc, _, _ := pCreateCompatDC.Call(0)
+	pSelectObject.Call(dc, hf)
+	return &gdiFont{hfont: hf, dc: dc, k: k}
+}
+
+func (f *gdiFont) free() {
+	pDeleteDC.Call(f.dc)
+	pDeleteObject.Call(f.hfont)
+}
+
+func (f *gdiFont) extent(s string) (int, int) {
+	u := syscall.StringToUTF16(s)
+	var sz [2]int32
+	if len(u) > 1 {
+		pGetTextExtent.Call(f.dc, uintptr(unsafe.Pointer(&u[0])), uintptr(len(u)-1), uintptr(unsafe.Pointer(&sz)))
+	}
+	return int(sz[0]), int(sz[1])
+}
+
+func (f *gdiFont) Width(s string) int { w, _ := f.extent(s); return (w + f.k - 1) / f.k }
+func (f *gdiFont) Height() int {
+	_, h := f.extent("Ag")
+	return (h + f.k - 1) / f.k
+}
+
+// setScale switches to whole-number scale k (window size, shape and font).
+func (w *winUI) setScale(k int) {
+	w.scale = k
+	if w.font != nil {
+		w.font.free()
+	}
+	w.font = newGDIFont(k)
+	skin.Body = w.font
 }
 
 var theUI *winUI
@@ -197,8 +263,8 @@ func (w *winUI) Bytes(done, total int64) {
 func (w *winUI) busy(b bool) { w.st.Busy = b; w.redraw() }
 
 func (w *winUI) redraw() {
-	im := skin.Render(w.st)
-	w.frame = toBGRA(im, w.scale)
+	im, ops := skin.RenderOps(w.st)
+	w.frame, w.ops = toBGRA(im, w.scale), ops
 	pInvalidateRect.Call(w.hwnd, 0, 0)
 }
 
@@ -219,7 +285,7 @@ func toBGRA(im *image.RGBA, k int) []byte {
 
 func msgBox(hwnd uintptr, text string, flags uintptr) uintptr {
 	t, _ := syscall.UTF16PtrFromString(text)
-	c, _ := syscall.UTF16PtrFromString("Rage of Mages 2")
+	c, _ := syscall.UTF16PtrFromString(skin.AppTitle)
 	r, _, _ := pMessageBox.Call(hwnd, uintptr(unsafe.Pointer(t)), uintptr(unsafe.Pointer(c)), flags)
 	return r
 }
@@ -287,22 +353,40 @@ func loadIcon(size int) uintptr {
 	return h
 }
 
-func screenScale() int {
-	dc, _, _ := pGetDC.Call(0)
-	dpi, _, _ := pGetDeviceCaps.Call(dc, 88) // LOGPIXELSX
-	pReleaseDC.Call(0, dc)
-	k := int(dpi+24) / 96 // 125% -> 1, 150%+ -> 2 (whole pixels keep the art crisp)
+// scaleFor picks the whole-number scale for a DPI: 100-125% -> 1,
+// 150-249% -> 2, ... Integer scaling with nearest neighbour keeps the game art
+// pixel-exact; the body text is drawn by GDI at the true size anyway.
+func scaleFor(dpi int) int {
+	k := (dpi + 48) / 96
 	if k < 1 {
 		k = 1
 	}
-	if sw, _, _ := pGetSystemMetrics.Call(0); int(sw) < skin.W*k {
-		k = 1
+	sw, _, _ := pGetSystemMetrics.Call(0)
+	sh, _, _ := pGetSystemMetrics.Call(1)
+	for k > 1 && (int(sw) < skin.W*k || int(sh) < skin.H*k) {
+		k--
 	}
 	return k
 }
 
+func systemDPI() int {
+	dc, _, _ := pGetDC.Call(0)
+	dpi, _, _ := pGetDeviceCaps.Call(dc, 88) // LOGPIXELSX
+	pReleaseDC.Call(0, dc)
+	return int(dpi)
+}
+
+func windowDPI(hwnd uintptr) int {
+	if pGetDpiForWindow.Find() == nil { // Windows 10 1607+
+		if d, _, _ := pGetDpiForWindow.Call(hwnd); d != 0 {
+			return int(d)
+		}
+	}
+	return systemDPI()
+}
+
 func (w *winUI) setShape() {
-	im := skin.Render(w.st)
+	im, _ := skin.RenderOps(w.st)
 	k := int32(w.scale)
 	rgn, _, _ := pCreateRectRgn.Call(0, 0, 0, 0)
 	for _, r := range skin.Shape(im) {
@@ -367,9 +451,41 @@ func wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 			return 0
 		}
 		bi := bitmapInfo{size: 40, width: int32(W), height: -int32(H), planes: 1, bitCount: 32}
-		pSetDIBits.Call(dc, 0, 0, uintptr(W), uintptr(H), 0, 0, 0, uintptr(H),
+		// Compose off-screen (no flicker): art at integer scale, then text.
+		mdc, _, _ := pCreateCompatDC.Call(dc)
+		bmp, _, _ := pCreateCompatBmp.Call(dc, uintptr(W), uintptr(H))
+		oldBmp, _, _ := pSelectObject.Call(mdc, bmp)
+		pSetDIBits.Call(mdc, 0, 0, uintptr(W), uintptr(H), 0, 0, 0, uintptr(H),
 			uintptr(unsafe.Pointer(&w.frame[0])), uintptr(unsafe.Pointer(&bi)), 0)
+		oldFont, _, _ := pSelectObject.Call(mdc, w.font.hfont)
+		pSetBkMode.Call(mdc, 1) // TRANSPARENT
+		for _, op := range w.ops {
+			u := syscall.StringToUTF16(op.S)
+			if len(u) < 2 {
+				continue
+			}
+			x, y := op.X*k, op.Y*k
+			pSetTextColor.Call(mdc, 0x081008) // shadow (BGR)
+			pTextOut.Call(mdc, uintptr(x+1), uintptr(y+1), uintptr(unsafe.Pointer(&u[0])), uintptr(len(u)-1))
+			pSetTextColor.Call(mdc, uintptr(op.C.R)|uintptr(op.C.G)<<8|uintptr(op.C.B)<<16)
+			pTextOut.Call(mdc, uintptr(x), uintptr(y), uintptr(unsafe.Pointer(&u[0])), uintptr(len(u)-1))
+		}
+		pBitBlt.Call(dc, 0, 0, uintptr(W), uintptr(H), mdc, 0, 0, 0x00CC0020) // SRCCOPY
+		pSelectObject.Call(mdc, oldFont)
+		pSelectObject.Call(mdc, oldBmp)
+		pDeleteObject.Call(bmp)
+		pDeleteDC.Call(mdc)
 		pEndPaint.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
+		return 0
+	case wmDPIChanged:
+		// Moved to a monitor with another scaling: re-render at its scale.
+		if k2 := scaleFor(int(wp & 0xffff)); k2 != w.scale {
+			rc := (*[4]int32)(unsafe.Pointer(lp))
+			w.setScale(k2)
+			pSetWindowPos.Call(hwnd, 0, uintptr(rc[0]), uintptr(rc[1]), uintptr(skin.W*k2), uintptr(skin.H*k2), 0x0014) // NOZORDER|NOACTIVATE
+			w.setShape()
+			w.redraw()
+		}
 		return 0
 	case wmNCHitTest:
 		x, y := lparamXY(lp)
@@ -536,7 +652,8 @@ func (w *winUI) playAndWatch() {
 
 func runGUI(s *session) {
 	pCoInitializeEx.Call(0, 0x2) // apartment-threaded, for the folder picker
-	w := &winUI{s: s, scale: screenScale()}
+	w := &winUI{s: s}
+	w.setScale(scaleFor(systemDPI()))
 	w.st = skin.State{
 		News:     "Click PLAY to update and start the game.",
 		Status:   "Ready",
@@ -548,7 +665,7 @@ func runGUI(s *session) {
 
 	inst, _, _ := pGetModuleHandle.Call(0)
 	cls, _ := syscall.UTF16PtrFromString("RoM2Launcher")
-	title, _ := syscall.UTF16PtrFromString("Rage of Mages 2 - BiffinBoys")
+	title, _ := syscall.UTF16PtrFromString(skin.AppTitle)
 	cursor, _, _ := pLoadCursor.Call(0, 32512) // IDC_ARROW
 	big, small := loadIcon(32), loadIcon(16)
 	wc := wndClassEx{
@@ -572,6 +689,11 @@ func runGUI(s *session) {
 		return
 	}
 	w.hwnd = hwnd
+	if k := scaleFor(windowDPI(hwnd)); k != w.scale { // the monitor it opened on
+		w.setScale(k)
+		W, H = skin.W*k, skin.H*k
+		pSetWindowPos.Call(hwnd, 0, uintptr((int(sw)-W)/2), uintptr((int(sh)-H)/2), uintptr(W), uintptr(H), 0x0014)
+	}
 	if big != 0 {
 		pSendMessage.Call(hwnd, wmSetIcon, 1, big)
 	}

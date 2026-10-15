@@ -2,8 +2,10 @@ package core
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 // Config is remembered between runs in %APPDATA%\A2Launcher\config.json.
@@ -35,11 +37,46 @@ func SaveConfig(c Config) error {
 	return os.WriteFile(p, b, 0o644)
 }
 
-// DefaultInstallDir avoids Program Files (needs admin, and Windows redirects writes).
-func DefaultInstallDir() string {
-	h, err := os.UserHomeDir()
-	if err != nil {
-		return `C:\Games\Rage of Mages 2`
+// PreferredInstallDir is where a fresh install goes on Windows. A new folder
+// directly under C:\ is allowed for standard users (no admin prompt).
+const PreferredInstallDir = `C:\Allods2`
+
+// DefaultInstallDir returns C:\Allods2 when it can be written to, otherwise
+// %USERPROFILE%\Games\Allods2. note says why the fallback was used ("" if not).
+// It never leaves an empty C:\Allods2 behind.
+func DefaultInstallDir() (dir, note string) {
+	fallback := func() string {
+		h, err := os.UserHomeDir()
+		if err != nil {
+			return `C:\Games\Allods2`
+		}
+		return filepath.Join(h, "Games", "Allods2")
 	}
-	return filepath.Join(h, "Games", "Rage of Mages 2")
+	if runtime.GOOS != "windows" {
+		return fallback(), ""
+	}
+	if err := probeWritable(PreferredInstallDir); err != nil {
+		return fallback(), fmt.Sprintf("default folder %s not writable (%v); using %s", PreferredInstallDir, err, fallback())
+	}
+	return PreferredInstallDir, ""
+}
+
+// probeWritable checks dir can hold files: an existing dir gets a test file,
+// a missing one is created and removed again.
+func probeWritable(dir string) error {
+	if fi, err := os.Stat(dir); err == nil {
+		if !fi.IsDir() {
+			return fmt.Errorf("%s is a file", dir)
+		}
+		f, err := os.CreateTemp(dir, ".a2probe-*")
+		if err != nil {
+			return err
+		}
+		f.Close()
+		return os.Remove(f.Name())
+	}
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		return err
+	}
+	return os.Remove(dir)
 }

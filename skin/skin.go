@@ -123,10 +123,58 @@ var (
 	panelDim = color.RGBA{0, 0, 0, 110}
 )
 
-// Render paints the whole window. Pixels outside the frame are transparent
+// AppTitle is shown in the frame, the window caption and the taskbar.
+const AppTitle = "Biffin Boys Rage of Mages 2 HAT Autopatcher"
+
+// BodyFont, when set, replaces the bitmap game font for body text (news,
+// status, folder, version). Its text is not drawn into the image; RenderOps
+// returns it as TextOps for the caller to draw (Windows: GDI ClearType).
+type BodyFont interface {
+	Width(s string) int // in skin pixels
+	Height() int        // line height in skin pixels
+}
+
+// TextOp is one piece of body text at skin-pixel position (X, Y) (top-left).
+type TextOp struct {
+	X, Y int
+	S    string
+	C    color.RGBA
+}
+
+// Body is the body font in use; nil means the bitmap game font.
+var Body BodyFont
+
+func bodyW(s string) int {
+	if Body != nil {
+		return Body.Width(s)
+	}
+	return TextWidth(s, 1)
+}
+
+func lineHeight() int {
+	if Body != nil {
+		return Body.Height() + 3
+	}
+	return lineH
+}
+
+// Render paints the whole window, body text included (via the game font,
+// or dropped if Body is set; use RenderOps then).
+func Render(st State) *image.RGBA { im, _ := RenderOps(st); return im }
+
+// RenderOps paints the window. Pixels outside the frame are transparent
 // (alpha 0); the Windows side turns them into the window shape.
-func Render(st State) *image.RGBA {
-	im := image.NewRGBA(image.Rect(0, 0, W, H))
+func RenderOps(st State) (*image.RGBA, []TextOp) {
+	var ops []TextOp
+	var im *image.RGBA
+	body := func(x, y int, t string, c color.RGBA) {
+		if Body != nil {
+			ops = append(ops, TextOp{x, y, t, c})
+		} else {
+			Text(im, x, y, t, c, 1)
+		}
+	}
+	im = image.NewRGBA(image.Rect(0, 0, W, H))
 	// Patterned purple background inside the frame.
 	tile(im, frame[0], image.Rect(16, 16, W-16, H-16))
 	// Edges, then the skull corners on top.
@@ -141,7 +189,7 @@ func Render(st State) *image.RGBA {
 
 	title := st.Title
 	if title == "" {
-		title = "Rage of Mages 2"
+		title = AppTitle
 	}
 	Text(im, (W-TextWidth(title, 1))/2, 30, title, goldCol, 1)
 
@@ -149,8 +197,8 @@ func Render(st State) *image.RGBA {
 	fill(im, newsRect, panelDim)
 	bevel(im, newsRect, goldLo, goldMid)
 	inner := newsRect.Inset(10)
-	lines := Wrap(st.News, inner.Dx())
-	maxLines := (inner.Dy() - 18) / lineH
+	lines := wrap(st.News, inner.Dx())
+	maxLines := (inner.Dy() - 18) / lineHeight()
 	if st.Scroll > len(lines)-maxLines {
 		st.Scroll = len(lines) - maxLines
 	}
@@ -163,23 +211,23 @@ func Render(st State) *image.RGBA {
 		if strings.HasPrefix(lines[i], "#") {
 			lines[i], col = strings.TrimLeft(lines[i], "# "), goldCol
 		}
-		Text(im, inner.Min.X, y, lines[i], col, 1)
-		y += lineH
+		body(inner.Min.X, y, lines[i], col)
+		y += lineHeight()
 	}
 	if len(lines) > maxLines {
-		Text(im, inner.Max.X-TextWidth("more...", 1), inner.Max.Y-15, "more...", dimCol, 1)
+		body(inner.Max.X-bodyW("more..."), inner.Max.Y-15, "more...", dimCol)
 	}
 	foot := st.Folder
 	if foot != "" {
 		foot = "Folder: " + foot
-		for TextWidth(foot, 1) > inner.Dx()-120 && len(foot) > 12 {
+		for bodyW(foot) > inner.Dx()-120 && len(foot) > 12 {
 			foot = foot[:8] + "..." + foot[12:]
 		}
-		Text(im, inner.Min.X, inner.Max.Y-15, foot, dimCol, 1)
+		body(inner.Min.X, inner.Max.Y-15, foot, dimCol)
 	}
 
 	// Status and slider-style progress bar.
-	Text(im, barRect.Min.X+4, statusY, st.Status, textCol, 1)
+	body(barRect.Min.X+4, statusY, st.Status, textCol)
 	drawBar(im, st.Progress)
 
 	for id, r := range buttonRect {
@@ -187,9 +235,9 @@ func Render(st State) *image.RGBA {
 	}
 	if st.Version != "" {
 		v := "v" + st.Version
-		Text(im, barRect.Max.X-4-TextWidth(v, 1), statusY, v, dimCol, 1)
+		body(barRect.Max.X-4-bodyW(v), statusY, v, dimCol)
 	}
-	return im
+	return im, ops
 }
 
 const lineH = 17
@@ -316,6 +364,12 @@ func textRaw(im *image.RGBA, x, y int, s string, c color.RGBA, scale int) {
 
 // Wrap splits text into lines no wider than w pixels. Explicit newlines are kept.
 func Wrap(text string, w int) []string {
+	return wrapWith(text, w, func(s string) int { return TextWidth(s, 1) })
+}
+
+func wrap(text string, w int) []string { return wrapWith(text, w, bodyW) }
+
+func wrapWith(text string, w int, width func(string) int) []string {
 	var out []string
 	for _, para := range strings.Split(strings.ReplaceAll(text, "\r", ""), "\n") {
 		line := ""
@@ -324,7 +378,7 @@ func Wrap(text string, w int) []string {
 			if line != "" {
 				try = line + " " + word
 			}
-			if TextWidth(try, 1) <= w || line == "" {
+			if width(try) <= w || line == "" {
 				line = try
 				continue
 			}
