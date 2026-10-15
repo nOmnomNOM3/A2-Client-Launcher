@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/nOmnomNOM3/A2-Client-Launcher/core"
 )
@@ -86,6 +87,7 @@ func (s *session) update(ctx context.Context, u ui, full bool) (restart bool, er
 	}
 
 	root := s.cfg.InstallDir
+	core.Logf(root, "update: launcher %s, manifest %s", version, m.Version)
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return false, fmt.Errorf("cannot create the game folder %s: %v", root, err)
 	}
@@ -111,43 +113,120 @@ func (s *session) update(ctx context.Context, u ui, full bool) (restart bool, er
 	return false, nil
 }
 
-// startGame launches the game process without waiting.
-func (s *session) startGame() (*os.Process, error) {
-	exe, args := "allods2.exe", []string{"-hat", "biffinboys.ddns.net"}
-	if s.manifest != nil {
-		exe, args = s.manifest.Exe, s.manifest.Args
-	}
-	p := filepath.Join(s.cfg.InstallDir, filepath.FromSlash(exe))
-	if _, err := os.Stat(p); err != nil {
-		return nil, fmt.Errorf("the game is not installed yet (%s missing). Click Play while online to download it", exe)
-	}
-	cmd := exec.Command(p, args...)
-	cmd.Dir = s.cfg.InstallDir
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("could not start the game: %v", err)
-	}
-	return cmd.Process, nil
+// earlyExitWindow: a game that dies this fast with a non-zero code failed to start.
+var earlyExitWindow = 5 * time.Second
+
+// gameRun is a started game process. done receives exactly one exit result.
+type gameRun struct {
+	proc    *os.Process
+	cmdline string
+	done    chan exitResult
 }
 
-// watchGame waits for the process, then returns a crash-report zip path if the
-// run looked like a crash. A clean exit returns ("", nil).
-func (s *session) watchGame(proc *os.Process, before map[string]core.LogStat) (string, error) {
-	state, err := proc.Wait()
-	code := 0
-	if state != nil {
-		code = state.ExitCode()
+type exitResult struct {
+	code int
+	err  error
+}
+
+// gamePaths resolves the absolute game folder and exe path from the manifest.
+func (s *session) gamePaths() (dir, exe string, args []string, err error) {
+	rel, args := "allods2.exe", []string{"-hat", "biffinboys.ddns.net"}
+	if s.manifest != nil && s.manifest.Exe != "" {
+		rel, args = s.manifest.Exe, s.manifest.Args
 	}
-	if err != nil && state == nil {
-		return "", fmt.Errorf("game process: %v", err)
+	dir, err = filepath.Abs(s.cfg.InstallDir)
+	if err != nil {
+		return "", "", nil, fmt.Errorf("bad game folder %q: %v", s.cfg.InstallDir, err)
+	}
+	exe = filepath.Join(dir, filepath.FromSlash(rel))
+	return dir, exe, args, nil
+}
+
+func quoteArg(a string) string {
+	if a == "" || strings.ContainsAny(a, " \t\"") {
+		return `"` + strings.ReplaceAll(a, `"`, `\"`) + `"`
+	}
+	return a
+}
+
+// startGame launches the game with cwd = game folder and starts a waiter.
+func (s *session) startGame() (*gameRun, error) {
+	dir, exe, args, err := s.gamePaths()
+	if err != nil {
+		core.Logf(s.cfg.InstallDir, "launch: %v", err)
+		return nil, err
+	}
+	parts := []string{quoteArg(exe)}
+	for _, a := range args {
+		parts = append(parts, quoteArg(a))
+	}
+	cmdline := strings.Join(parts, " ")
+	core.Logf(dir, "launch: dir=%s", dir)
+	core.Logf(dir, "launch: command=%s", cmdline)
+	if fi, err := os.Stat(exe); err != nil || fi.IsDir() {
+		core.Logf(dir, "launch: exe missing: %v", err)
+		return nil, fmt.Errorf("the game is not installed yet (%s missing). Click Play while online to download it", exe)
+	}
+	for _, dll := range []string{"a2mgr.dll", "ddraw.dll"} {
+		if _, err := os.Stat(filepath.Join(dir, dll)); err != nil {
+			core.Logf(dir, "launch: warning: %s not found in game folder", dll)
+		}
+	}
+	cmd := exec.Command(exe, args...)
+	cmd.Dir = dir
+	if err := cmd.Start(); err != nil {
+		core.Logf(dir, "launch: start failed: %v", err)
+		return nil, fmt.Errorf("could not start the game:\n%s\n\n%v\n\nTry Repair files. If it says elevation is required, run the game folder outside Program Files. Details: %s", cmdline, err, core.LogPath(dir))
+	}
+	core.Logf(dir, "launch: started pid %d", cmd.Process.Pid)
+	r := &gameRun{proc: cmd.Process, cmdline: cmdline, done: make(chan exitResult, 1)}
+	go func() {
+		st, err := cmd.Process.Wait()
+		res := exitResult{err: err}
+		if st != nil {
+			res.code = st.ExitCode()
+			res.err = nil
+		}
+		core.Logf(dir, "game exited: code=%d err=%v", res.code, res.err)
+		r.done <- res
+	}()
+	return r, nil
+}
+
+// earlyCheck waits up to earlyExitWindow. It returns (exited, result, error):
+// a non-zero exit inside the window becomes a user-facing error.
+func (s *session) earlyCheck(r *gameRun) (bool, exitResult, error) {
+	select {
+	case res := <-r.done:
+		if res.err != nil || res.code != 0 {
+			core.Logf(s.cfg.InstallDir, "launch: game quit right away (code %d)", res.code)
+			return true, res, fmt.Errorf("the game closed right after starting (exit code %d, 0x%X).\n\nCommand: %s\n\nUsually a missing or blocked file (a2mgr.dll, ddraw.dll, world.res) or antivirus. Try Repair files. Log: %s",
+				res.code, uint32(res.code), r.cmdline, core.LogPath(s.cfg.InstallDir))
+		}
+		return true, res, nil
+	case <-time.After(earlyExitWindow):
+		return false, exitResult{}, nil
+	}
+}
+
+// watchGame waits for the process (unless it already exited), then returns a
+// crash-report zip path if the run looked like a crash. A clean exit returns ("", nil).
+func (s *session) watchGame(r *gameRun, exited bool, res exitResult, before map[string]core.LogStat) (string, error) {
+	if !exited {
+		res = <-r.done
+	}
+	if res.err != nil {
+		return "", fmt.Errorf("game process: %v", res.err)
 	}
 	ver := ""
 	if s.manifest != nil {
 		ver = s.manifest.Version
 	}
-	det := core.DetectCrash(s.cfg.InstallDir, code, before)
+	det := core.DetectCrash(s.cfg.InstallDir, res.code, before)
 	if !det.Crashed {
 		return "", nil
 	}
+	core.Logf(s.cfg.InstallDir, "crash detected (code %d)", res.code)
 	return core.WriteCrashReport(s.cfg.InstallDir, det, ver)
 }
 

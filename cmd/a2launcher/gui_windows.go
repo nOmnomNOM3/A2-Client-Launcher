@@ -51,6 +51,7 @@ var (
 	pPostMessage       = user32.NewProc("PostMessageW")
 	pPostQuitMessage   = user32.NewProc("PostQuitMessage")
 	pShowWindow        = user32.NewProc("ShowWindow")
+	pAllowSetFg = user32.NewProc("AllowSetForegroundWindow")
 	pBeginPaint        = user32.NewProc("BeginPaint")
 	pEndPaint          = user32.NewProc("EndPaint")
 	pInvalidateRect    = user32.NewProc("InvalidateRect")
@@ -485,26 +486,42 @@ func (w *winUI) run(full, launch bool) {
 	}()
 }
 
-// playAndWatch runs on the UI thread; waiting happens in a new goroutine.
+// playAndWatch runs on the UI thread; all waiting happens in goroutines and
+// every failure path re-enables the buttons and shows the window.
 func (w *winUI) playAndWatch() {
 	s := w.s
-	before := core.SnapshotLogs(s.cfg.InstallDir)
-	proc, err := s.startGame()
-	if err != nil {
+	fail := func(msg string) {
+		pShowWindow.Call(w.hwnd, 5) // SW_SHOW
+		w.st.Status = "Problem: see message"
 		w.busy(false)
-		msgBox(w.hwnd, err.Error(), mbOK|mbIconError)
+		msgBox(w.hwnd, msg, mbOK|mbIconError)
+	}
+	before := core.SnapshotLogs(s.cfg.InstallDir)
+	// Let the game take the foreground: a DirectDraw game started behind the
+	// launcher can sit invisible waiting for focus.
+	pAllowSetFg.Call(^uintptr(0)) // ASFW_ANY
+	run, err := s.startGame()
+	if err != nil {
+		fail(err.Error())
 		return
 	}
-	w.st.Status = "Game running..."
+	w.st.Status = "Starting the game..."
 	w.redraw()
-	pShowWindow.Call(w.hwnd, 0) // SW_HIDE
 	go func() {
-		zipPath, err := s.watchGame(proc, before)
+		exited, res, err := s.earlyCheck(run)
+		if err != nil {
+			w.sync(func() { fail(err.Error()) })
+			return
+		}
+		w.sync(func() {
+			w.st.Status = "Game running..."
+			w.redraw()
+			pShowWindow.Call(w.hwnd, 0) // SW_HIDE
+		})
+		zipPath, err := s.watchGame(run, exited, res, before)
 		w.sync(func() {
 			if err != nil {
-				pShowWindow.Call(w.hwnd, 5) // SW_SHOW
-				w.busy(false)
-				msgBox(w.hwnd, err.Error(), mbOK|mbIconError)
+				fail(err.Error())
 				return
 			}
 			if zipPath != "" {

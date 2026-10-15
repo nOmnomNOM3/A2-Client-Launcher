@@ -37,12 +37,17 @@ func runConsole(s *session, repair, noLaunch bool) int {
 		return 0
 	}
 	before := core.SnapshotLogs(s.cfg.InstallDir)
-	proc, err := s.startGame()
+	run, err := s.startGame()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		return 1
 	}
-	zipPath, err := s.watchGame(proc, before)
+	exited, res, err := s.earlyCheck(run)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error:", err)
+		return 1
+	}
+	zipPath, err := s.watchGame(run, exited, res, before)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		return 1
