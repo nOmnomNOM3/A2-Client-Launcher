@@ -107,7 +107,7 @@ func TestSettingsRoundTripKeepsEverythingElse(t *testing.T) {
 		t.Errorf("unexpected changes: %v", changed)
 	}
 	cb, _ := os.ReadFile(filepath.Join(dir, "allods2.cfg"))
-	if got := string(cb); got != "# my notes\r\nr_fps 0\r\nalias:f5 help\r\nr_width 1280\r\nr_height 720\r\n" {
+	if got := string(cb); got != "# my notes\r\nr_fps 0\r\nalias:f5 help\r\nr_height 720\r\nr_width 1280\r\n" {
 		t.Errorf("cfg = %q", got)
 	}
 	if reg["GameSpeed"] != "5" || reg["Shadows"] != "1" {

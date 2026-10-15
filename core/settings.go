@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -270,8 +271,14 @@ func (s *Setting) Apply(kv KV) {
 	if !s.Changed() || s.Cur < 0 || s.Disabled != "" {
 		return
 	}
-	for k, v := range s.Choices[s.Cur].Set {
-		kv.Set(k, v)
+	set := s.Choices[s.Cur].Set
+	keys := make([]string, 0, len(set))
+	for k := range set {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys) // deterministic order for keys appended to the file
+	for _, k := range keys {
+		kv.Set(k, set[k])
 	}
 }
 
