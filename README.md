@@ -57,3 +57,6 @@ Remove a file from players: `--delete old.dll` (it is moved to the launcher's ba
 Go 1.24. `go test ./...`; `./build.sh` cross-compiles the Windows exe (no cgo). The window is plain Win32 + GDI painted by `skin/` in the game's own menu style (skull frame, slider, font1 from graphics.res, icon from allods2.exe); `go run ./cmd/uipreview out.png` renders it anywhere. Regenerate the art with `python tools/gen_ui_assets.py <graphics.res> <allods2.exe>`.
 Go was chosen over Python/PyInstaller (antivirus false positives, slow start) and .NET single-file
 (bigger, slower CI): one static exe, trivial cross-compile from Linux CI.
+
+## Settings
+The Settings button edits display (cnc-ddraw `ddraw.ini`), a2mgr `allods2.cfg` and the game's own options. See [docs/settings.md](docs/settings.md).

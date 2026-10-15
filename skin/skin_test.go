@@ -37,3 +37,22 @@ func TestWrap(t *testing.T) {
 		t.Fatalf("lines = %d", got)
 	}
 }
+
+func TestSettingsHitTest(t *testing.T) {
+	st := State{Page: PageSettings, Tabs: []string{"A", "B"}, Rows: []SRow{{Label: "x"}, {Label: "y", Col: 1}}}
+	_, b0 := rowRects(st.Rows, 0)
+	_, b1 := rowRects(st.Rows, 1)
+	if HitTest(st, b0.Min.X+3, b0.Min.Y+3) != RowPrev || HitTest(st, b0.Max.X-3, b0.Min.Y+3) != RowPrev+1 {
+		t.Fatal("row 0 arrows")
+	}
+	if HitTest(st, b1.Max.X-3, b1.Min.Y+3) != RowPrev+3 || b1.Min.X <= b0.Max.X {
+		t.Fatal("row 1 should be in the right column")
+	}
+	r := tabRect(1)
+	if HitTest(st, r.Min.X+2, r.Min.Y+2) != TabID+1 {
+		t.Fatal("tab")
+	}
+	if HitTest(st, bigSlot.Min.X+5, bigSlot.Min.Y+5) != Save || HitTest(State{}, bigSlot.Min.X+5, bigSlot.Min.Y+5) != Play {
+		t.Fatal("page buttons")
+	}
+}

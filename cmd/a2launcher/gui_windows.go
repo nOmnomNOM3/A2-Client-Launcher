@@ -21,6 +21,7 @@ import (
 	"image"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"syscall"
@@ -181,6 +182,8 @@ type winUI struct {
 	tracking bool
 	ops      []skin.TextOp
 	font     *gdiFont
+	sf       *core.SettingsFiles // settings screen state (nil on the main page)
+	status   string              // main-page status, restored when leaving settings
 }
 
 // gdiFont is the crisp body font: Segoe UI with ClearType, created at the
@@ -419,8 +422,134 @@ func (w *winUI) click(id int) {
 			w.redraw()
 		}
 	case skin.Exit:
+		if w.st.Page == skin.PageSettings && w.sf != nil && w.sf.Changed() &&
+			msgBox(w.hwnd, "You have unsaved settings. Quit without saving?", mbYesNo|mbIconWarning) != idYes {
+			return
+		}
 		pDestroyWindow.Call(w.hwnd)
+	case skin.Settings:
+		w.openSettings()
+	case skin.Back:
+		if w.sf != nil && w.sf.Changed() &&
+			msgBox(w.hwnd, "Discard the changes you have not saved?", mbYesNo|mbIconWarning) != idYes {
+			return
+		}
+		w.closeSettings()
+	case skin.Undo:
+		for _, it := range w.sf.Items {
+			it.Cur = it.Orig
+		}
+		w.settingsRows()
+	case skin.OpenIni:
+		p := filepath.Join(w.s.cfg.InstallDir, "ddraw.ini")
+		if _, err := os.Stat(p); err != nil {
+			msgBox(w.hwnd, "ddraw.ini was not found in the game folder. Press PLAY once to install the game.", mbOK|mbIconWarning)
+			return
+		}
+		exec.Command("notepad.exe", p).Start()
+	case skin.Save:
+		w.saveSettings()
+	default:
+		if id >= skin.TabID && id < skin.TabID+len(core.SettingsTabs) {
+			w.st.Tab = id - skin.TabID
+			w.settingsRows()
+		} else if id >= skin.RowPrev {
+			i, d := (id-skin.RowPrev)/2, 1
+			if (id-skin.RowPrev)%2 == 0 {
+				d = -1
+			}
+			if it := w.tabItem(i); it != nil {
+				if it.Disabled != "" {
+					w.st.Status = it.Disabled
+				}
+				it.Step(d)
+				w.settingsRows()
+			}
+		}
 	}
+}
+
+func (w *winUI) tabItem(i int) *core.Setting {
+	n := 0
+	for _, it := range w.sf.Items {
+		if it.Tab == w.st.Tab {
+			if n == i {
+				return it
+			}
+			n++
+		}
+	}
+	return nil
+}
+
+// settingsRows rebuilds the rows of the current tab from w.sf.
+func (w *winUI) settingsRows() {
+	var rows []skin.SRow
+	for _, it := range w.sf.Items {
+		if it.Tab == w.st.Tab {
+			rows = append(rows, skin.SRow{Label: it.Label, Value: it.Value(), Changed: it.Changed() && it.Cur >= 0,
+				Disabled: it.Disabled != "", Col: it.Col})
+		}
+	}
+	w.st.Rows = rows
+	w.redraw()
+}
+
+const settingsHint = "Click the arrows to change a setting, then SAVE. A backup is kept."
+
+func (w *winUI) openSettings() {
+	sf, err := core.LoadSettings(w.s.cfg.InstallDir, newGameReg(), regBackup)
+	if err != nil {
+		msgBox(w.hwnd, "Could not read the settings: "+err.Error(), mbOK|mbIconError)
+		return
+	}
+	w.sf, w.status = sf, w.st.Status
+	w.st.Page, w.st.Tabs, w.st.Tab, w.st.Hover = skin.PageSettings, core.SettingsTabs, 0, skin.None
+	w.st.Status = settingsHint
+	w.settingsRows()
+}
+
+func (w *winUI) closeSettings() {
+	w.sf = nil
+	w.st.Page, w.st.Rows, w.st.Hover = skin.PageMain, nil, skin.None
+	w.st.Status = w.status
+	w.redraw()
+}
+
+func (w *winUI) saveSettings() {
+	if !w.sf.Changed() {
+		w.closeSettings()
+		return
+	}
+	backup, err := w.sf.Save()
+	if err != nil {
+		msgBox(w.hwnd, "Saving failed: "+err.Error()+"\n\nBackup: "+backup, mbOK|mbIconError)
+		return
+	}
+	w.closeSettings()
+	w.st.Status = "Settings saved (backup in .a2launcher\\backup)"
+	w.redraw()
+}
+
+// hover updates the highlighted control and, on the settings page, shows
+// the help text of the row under the mouse.
+func (w *winUI) hover(h int) {
+	if h == w.st.Hover {
+		return
+	}
+	w.st.Hover = h
+	if w.st.Page == skin.PageSettings {
+		w.st.Status = settingsHint
+		if h >= skin.RowPrev {
+			if it := w.tabItem((h - skin.RowPrev) / 2); it != nil {
+				w.st.Status = it.Label + ": " + it.Help
+				if it.Disabled != "" {
+					w.st.Status = it.Label + ": " + it.Disabled
+				}
+			}
+		}
+	}
+	w.redraw()
 }
 
 func wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
@@ -492,7 +621,7 @@ func wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 		pt := [2]int32{int32(x), int32(y)}
 		pScreenToClient.Call(hwnd, uintptr(unsafe.Pointer(&pt)))
 		cx, cy := int(pt[0])/k, int(pt[1])/k
-		if skin.ButtonAt(cx, cy) != skin.None || skin.InNews(cx, cy) {
+		if skin.HitTest(w.st, cx, cy) != skin.None || skin.InNews(cx, cy) {
 			return htClient
 		}
 		return htCaption // drag the window by its frame and background
@@ -503,21 +632,15 @@ func wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 			pTrackMouseEvent.Call(uintptr(unsafe.Pointer(&tm)))
 			w.tracking = true
 		}
-		if h := skin.ButtonAt(x/k, y/k); h != w.st.Hover {
-			w.st.Hover = h
-			w.redraw()
-		}
+		w.hover(skin.HitTest(w.st, x/k, y/k))
 		return 0
 	case wmMouseLeave:
 		w.tracking = false
-		if w.st.Hover != skin.None {
-			w.st.Hover = skin.None
-			w.redraw()
-		}
+		w.hover(skin.None)
 		return 0
 	case wmLButtonDown:
 		x, y := lparamXY(lp)
-		if b := skin.ButtonAt(x/k, y/k); b != skin.None {
+		if b := skin.HitTest(w.st, x/k, y/k); b != skin.None {
 			w.st.Pressed = b
 			pSetCapture.Call(hwnd)
 			w.redraw()
@@ -530,12 +653,15 @@ func wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 			pReleaseCapture.Call()
 			w.st.Pressed = skin.None
 			w.redraw()
-			if skin.ButtonAt(x/k, y/k) == b {
+			if skin.HitTest(w.st, x/k, y/k) == b {
 				w.click(b)
 			}
 		}
 		return 0
 	case wmMouseWheel:
+		if w.st.Page == skin.PageSettings {
+			return 0
+		}
 		d := int(int16(wp >> 16))
 		if d > 0 {
 			w.st.Scroll -= 3
@@ -550,9 +676,17 @@ func wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 	case wmKeyDown:
 		switch wp {
 		case 0x0D: // Enter
-			w.click(skin.Play)
+			if w.st.Page == skin.PageSettings {
+				w.click(skin.Save)
+			} else {
+				w.click(skin.Play)
+			}
 		case 0x1B: // Esc
-			w.click(skin.Exit)
+			if w.st.Page == skin.PageSettings {
+				w.click(skin.Back)
+			} else {
+				w.click(skin.Exit)
+			}
 		}
 		return 0
 	case wmClose:

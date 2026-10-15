@@ -28,7 +28,32 @@ const (
 	Repair
 	Folder
 	Exit
+	Settings // main page: open the settings screen
+	Save     // settings page buttons
+	Back
+	Undo
+	OpenIni
 )
+
+// Settings screen hit ids: TabID+i for tab i, RowPrev+2*i / RowPrev+2*i+1
+// for the "<" / ">" halves of row i's value box.
+const (
+	TabID   = 50
+	RowPrev = 100
+)
+
+// Pages.
+const (
+	PageMain = iota
+	PageSettings
+)
+
+// SRow is one line of the settings screen.
+type SRow struct {
+	Label, Value      string
+	Changed, Disabled bool
+	Col               int // 0 left, 1 right column
+}
 
 // State is everything the window shows.
 type State struct {
@@ -42,6 +67,11 @@ type State struct {
 	Hover    int
 	Pressed  int
 	Scroll   int // first news line shown
+
+	Page int      // PageMain or PageSettings
+	Tabs []string // settings tabs
+	Tab  int
+	Rows []SRow // rows of the current tab
 }
 
 var (
@@ -89,21 +119,80 @@ var (
 	newsRect   = image.Rect(44, 62, W-44, 290)
 	statusY    = 302
 	barRect    = image.Rect(44, 322, W-44, 346)
-	buttonRect = map[int]image.Rectangle{
-		Repair: image.Rect(44, 364, 154, 394),
-		Folder: image.Rect(164, 364, 274, 394),
-		Exit:   image.Rect(284, 364, 394, 394),
-		Play:   image.Rect(W-44-180, 358, W-44, 400),
+	slot       = [4]image.Rectangle{image.Rect(44, 364, 128, 394), image.Rect(136, 364, 220, 394), image.Rect(228, 364, 312, 394), image.Rect(320, 364, 404, 394)}
+	bigSlot    = image.Rect(W-44-180, 358, W-44, 400)
+	pageButton = [2]map[int]image.Rectangle{
+		{Repair: slot[0], Folder: slot[1], Settings: slot[2], Exit: slot[3], Play: bigSlot},
+		{Back: slot[0], Undo: slot[1], OpenIni: slot[2], Exit: slot[3], Save: bigSlot},
 	}
-	buttonText = map[int]string{Play: "PLAY", Repair: "Repair", Folder: "Folder", Exit: "Exit"}
+	buttonRect = pageButton[0]
+	buttonText = map[int]string{Play: "PLAY", Repair: "Repair", Folder: "Folder", Exit: "Exit",
+		Settings: "Settings", Save: "SAVE", Back: "Back", Undo: "Undo", OpenIni: "Edit ini"}
 )
 
-// ButtonAt returns the button under (x, y), or None.
-func ButtonAt(x, y int) int {
+// Settings layout: tabs across the top of the panel, rows in two columns.
+const (
+	tabY, tabH   = 68, 20
+	tabW         = 96
+	rowY0, rowDY = 96, 18
+	rowsPerCol   = 10
+	colW         = 270
+	labelW       = 122
+)
+
+func tabRect(i int) image.Rectangle {
+	x := newsRect.Min.X + 10 + i*(tabW+6)
+	return image.Rect(x, tabY, x+tabW, tabY+tabH)
+}
+
+// rowRects returns row i's label origin and value box.
+func rowRects(rows []SRow, i int) (image.Point, image.Rectangle) {
+	col, r := rows[i].Col, 0
+	for j := 0; j < i; j++ {
+		if rows[j].Col == col {
+			r++
+		}
+	}
+	if r >= rowsPerCol { // overflow: next column
+		col, r = col+1, r-rowsPerCol
+	}
+	x := newsRect.Min.X + 10 + col*(colW+12)
+	y := rowY0 + r*rowDY
+	return image.Pt(x, y), image.Rect(x+labelW, y-1, x+colW, y+rowDY-3)
+}
+
+func pageButtons(page int) map[int]image.Rectangle {
+	if page == PageSettings {
+		return pageButton[1]
+	}
+	return pageButton[0]
+}
+
+// ButtonAt returns the button under (x, y) on the main page, or None.
+func ButtonAt(x, y int) int { return HitTest(State{}, x, y) }
+
+// HitTest returns the control under (x, y) for st's page, or None.
+func HitTest(st State, x, y int) int {
 	p := image.Pt(x, y)
-	for id, r := range buttonRect {
+	for id, r := range pageButtons(st.Page) {
 		if p.In(r) {
 			return id
+		}
+	}
+	if st.Page == PageSettings {
+		for i := range st.Tabs {
+			if p.In(tabRect(i)) {
+				return TabID + i
+			}
+		}
+		for i := range st.Rows {
+			_, box := rowRects(st.Rows, i)
+			if p.In(box) {
+				if x < box.Min.X+box.Dx()/2 {
+					return RowPrev + 2*i
+				}
+				return RowPrev + 2*i + 1
+			}
 		}
 	}
 	return None
@@ -193,9 +282,35 @@ func RenderOps(st State) (*image.RGBA, []TextOp) {
 	}
 	Text(im, (W-TextWidth(title, 1))/2, 30, title, goldCol, 1)
 
-	// News panel.
+	// News panel (or the settings panel).
 	fill(im, newsRect, panelDim)
 	bevel(im, newsRect, goldLo, goldMid)
+	if st.Page == PageSettings {
+		renderSettings(im, st, body)
+	} else {
+		renderNews(im, st, body)
+	}
+
+	// Status and slider-style progress bar.
+	status := st.Status
+	for bodyW(status) > barRect.Dx()-70 && len(status) > 4 {
+		status = strings.TrimSuffix(status, "...")
+		status = status[:len(status)-1] + "..."
+	}
+	body(barRect.Min.X+4, statusY, status, textCol)
+	drawBar(im, st.Progress)
+
+	for id, r := range pageButtons(st.Page) {
+		drawButton(im, r, buttonText[id], id == Play || id == Save, st.Busy && id != Exit, st.Hover == id, st.Pressed == id)
+	}
+	if st.Version != "" {
+		v := "v" + st.Version
+		body(barRect.Max.X-4-bodyW(v), statusY, v, dimCol)
+	}
+	return im, ops
+}
+
+func renderNews(im *image.RGBA, st State, body func(x, y int, t string, c color.RGBA)) {
 	inner := newsRect.Inset(10)
 	lines := wrap(st.News, inner.Dx())
 	maxLines := (inner.Dy() - 18) / lineHeight()
@@ -225,19 +340,72 @@ func RenderOps(st State) (*image.RGBA, []TextOp) {
 		}
 		body(inner.Min.X, inner.Max.Y-15, foot, dimCol)
 	}
+}
 
-	// Status and slider-style progress bar.
-	body(barRect.Min.X+4, statusY, st.Status, textCol)
-	drawBar(im, st.Progress)
+func renderSettings(im *image.RGBA, st State, body func(x, y int, t string, c color.RGBA)) {
+	for i, t := range st.Tabs {
+		r := tabRect(i)
+		on := i == st.Tab
+		hov := st.Hover == TabID+i
+		c := color.RGBA{40, 24, 44, 255}
+		if on {
+			c = color.RGBA{72, 48, 78, 255}
+		}
+		fill(im, r, c)
+		if on {
+			bevel(im, r, goldHi, goldLo)
+		} else {
+			bevel(im, r, goldLo, shadow)
+		}
+		col := dimCol
+		if on || hov {
+			col = goldCol
+		}
+		Text(im, r.Min.X+(r.Dx()-TextWidth(t, 1))/2, r.Min.Y+3, t, col, 1)
+	}
+	fill(im, image.Rect(newsRect.Min.X+10, tabY+tabH, newsRect.Max.X-10, tabY+tabH+1), goldLo)
+	for i, row := range st.Rows {
+		lp, box := rowRects(st.Rows, i)
+		lc := textCol
+		if row.Disabled {
+			lc = dimCol
+		}
+		body(lp.X, lp.Y, row.Label, lc)
+		fill(im, box, color.RGBA{20, 10, 22, 200})
+		bevel(im, box, shadow, goldLo)
+		hp, hn := st.Hover == RowPrev+2*i, st.Hover == RowPrev+2*i+1
+		if !row.Disabled {
+			arrow(im, box.Min.X+4, box.Min.Y+box.Dy()/2, -1, hp)
+			arrow(im, box.Max.X-5, box.Min.Y+box.Dy()/2, 1, hn)
+		}
+		vc := textCol
+		switch {
+		case row.Disabled || row.Value == "Custom":
+			vc = dimCol
+		case row.Changed:
+			vc = goldCol
+		}
+		v := row.Value
+		for bodyW(v) > box.Dx()-24 && len(v) > 3 {
+			v = v[:len(v)-1]
+		}
+		body(box.Min.X+(box.Dx()-bodyW(v))/2, lp.Y, v, vc)
+	}
+}
 
-	for id, r := range buttonRect {
-		drawButton(im, r, buttonText[id], id == Play, st.Busy && id != Exit, st.Hover == id, st.Pressed == id)
+// arrow draws a small solid triangle pointing left (d<0) or right at (x, cy).
+func arrow(im *image.RGBA, x, cy, d int, hot bool) {
+	c := goldMid
+	if hot {
+		c = goldHi
 	}
-	if st.Version != "" {
-		v := "v" + st.Version
-		body(barRect.Max.X-4-bodyW(v), statusY, v, dimCol)
+	for i := 0; i < 5; i++ {
+		px := x + i
+		if d > 0 {
+			px = x - i
+		}
+		fill(im, image.Rect(px, cy-i, px+1, cy+i+1), c)
 	}
-	return im, ops
 }
 
 const lineH = 17

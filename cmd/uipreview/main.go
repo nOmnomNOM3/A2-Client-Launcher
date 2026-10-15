@@ -1,5 +1,6 @@
 // Command uipreview renders the launcher window to a PNG (no Windows needed).
-// Usage: go run ./cmd/uipreview out.png [scale] [body-font.ttf]
+// Usage: go run ./cmd/uipreview out.png [scale] [body-font.ttf] [settings-tab] [game-dir]
+// settings-tab 0/1 renders the settings screen with ddraw.ini/allods2.cfg from game-dir.
 //
 // On Windows the body text is GDI ClearType Segoe UI; here it is drawn with a
 // stand-in TTF (Liberation Sans by default) at the same size so the layout
@@ -17,6 +18,7 @@ import (
 	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
 
+	"github.com/nOmnomNOM3/A2-Client-Launcher/core"
 	"github.com/nOmnomNOM3/A2-Client-Launcher/skin"
 )
 
@@ -52,7 +54,7 @@ func main() {
 			}
 		}
 	}
-	im, ops := skin.RenderOps(skin.State{
+	st := skin.State{
 		News: "# Welcome to the BiffinBoys server!\n" +
 			"Press PLAY to update your game and join biffinboys.ddns.net.\n\n" +
 			"# Version 2026.10.15\n" +
@@ -64,7 +66,33 @@ func main() {
 		Version:  "1.2.0",
 		Progress: 0.245,
 		Hover:    skin.Play,
-	})
+	}
+	if len(os.Args) > 4 {
+		tab, _ := strconv.Atoi(os.Args[4])
+		dir := "core/testdata"
+		if len(os.Args) > 5 {
+			dir = os.Args[5]
+		}
+		reg := memKV{"GameSpeed": "8", "MusicEnabled": "1", "Shadows": "1", "Lighting": "1", "Smoothing": "1", "Animation": "1",
+			"ShowAllHitPoints": "1", "ShowFlyingHP": "1", "ClanNames": "1", "MessageColors": "1", "Acknowledgement": "1", "TipsMode": "1"}
+		sf, err := core.LoadSettings(dir, reg, nil)
+		if err != nil {
+			panic(err)
+		}
+		var rows []skin.SRow
+		for _, it := range sf.Items {
+			if it.Tab != tab {
+				continue
+			}
+			if it.Label == "Display mode" || it.Label == "Window size" {
+				it.Step(1) // show a pending change in gold
+			}
+			rows = append(rows, skin.SRow{Label: it.Label, Value: it.Value(), Changed: it.Changed(), Disabled: it.Disabled != "", Col: it.Col})
+		}
+		st.Page, st.Tabs, st.Tab, st.Rows = skin.PageSettings, core.SettingsTabs, tab, rows
+		st.Status, st.Progress, st.Hover = "Window size: size of the window in Window mode.", -1, skin.Save
+	}
+	im, ops := skin.RenderOps(st)
 	// Integer nearest-neighbour scale, like the Windows blit.
 	big := image.NewRGBA(image.Rect(0, 0, skin.W*k, skin.H*k))
 	for y := 0; y < skin.H*k; y++ {
@@ -94,3 +122,8 @@ func main() {
 		panic(err)
 	}
 }
+
+type memKV map[string]string
+
+func (m memKV) Get(k string) (string, bool) { v, ok := m[k]; return v, ok }
+func (m memKV) Set(k, v string)             { m[k] = v }
