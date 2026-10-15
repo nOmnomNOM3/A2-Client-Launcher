@@ -609,7 +609,7 @@ func wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 	case wmDPIChanged:
 		// Moved to a monitor with another scaling: re-render at its scale.
 		if k2 := scaleFor(int(wp & 0xffff)); k2 != w.scale {
-			rc := (*[4]int32)(unsafe.Pointer(lp))
+			rc := *(**[4]int32)(unsafe.Pointer(&lp)) // lParam holds a RECT pointer; read it this way so go vet accepts it
 			w.setScale(k2)
 			pSetWindowPos.Call(hwnd, 0, uintptr(rc[0]), uintptr(rc[1]), uintptr(skin.W*k2), uintptr(skin.H*k2), 0x0014) // NOZORDER|NOACTIVATE
 			w.setShape()
