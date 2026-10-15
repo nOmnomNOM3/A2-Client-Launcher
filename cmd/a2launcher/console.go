@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+
+	"github.com/nOmnomNOM3/A2-Client-Launcher/core"
 )
 
 type consoleUI struct{ last string }
@@ -34,8 +36,19 @@ func runConsole(s *session, repair, noLaunch bool) int {
 	if noLaunch {
 		return 0
 	}
-	if err := s.launch(); err != nil {
+	before := core.SnapshotLogs(s.cfg.InstallDir)
+	proc, err := s.startGame()
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
+		return 1
+	}
+	zipPath, err := s.watchGame(proc, before)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error:", err)
+		return 1
+	}
+	if zipPath != "" {
+		fmt.Fprintln(os.Stderr, "The game crashed. A report was saved to", zipPath)
 		return 1
 	}
 	return 0

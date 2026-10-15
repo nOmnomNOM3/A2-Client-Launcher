@@ -5,6 +5,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"sync"
 
 	"github.com/lxn/walk"
@@ -46,6 +49,33 @@ func (w *winUI) busy(b bool) {
 	}
 }
 
+func showCrashDialog(owner walk.Form, zipPath string) {
+	var dlg *walk.Dialog
+	var accept *walk.PushButton
+	_, err := Dialog{
+		AssignTo: &dlg,
+		Title:    "Rage of Mages 2",
+		MinSize:  Size{Width: 420, Height: 140},
+		Layout:   VBox{},
+		Children: []Widget{
+			Label{Text: "The game crashed. A report was saved to:\n" + zipPath},
+			Composite{Layout: HBox{}, Children: []Widget{
+				HSpacer{},
+				PushButton{Text: "Open folder", OnClicked: func() {
+					exec.Command("explorer", filepath.Dir(zipPath)).Start()
+				}},
+				PushButton{AssignTo: &accept, Text: "OK", OnClicked: func() { dlg.Accept() }},
+			}},
+		},
+		DefaultButton: &accept,
+	}.Run(owner)
+	if err != nil {
+		walk.MsgBox(owner, "Rage of Mages 2",
+			"The game crashed. A report was saved to:\n"+zipPath,
+			walk.MsgBoxIconError)
+	}
+}
+
 func runGUI(s *session) {
 	w := &winUI{}
 	var play, repair, browse *walk.PushButton
@@ -60,28 +90,32 @@ func runGUI(s *session) {
 			if restart {
 				restartSelf()
 			}
+			doLaunch := false
 			w.mw.Synchronize(func() {
-				w.busy(false)
 				if err != nil {
 					w.status.SetText("Problem: see message")
 					if !launch || s.manifest != nil {
+						w.busy(false)
 						walk.MsgBox(w.mw, "Rage of Mages 2", err.Error(), walk.MsgBoxIconError)
 						return
 					}
 					// Offline: offer to play with the files we have.
 					if walk.MsgBox(w.mw, "Rage of Mages 2", err.Error()+"\n\nStart the game anyway with the files you already have?",
 						walk.MsgBoxYesNo|walk.MsgBoxIconWarning) != walk.DlgCmdYes {
+						w.busy(false)
 						return
 					}
 				}
-				if launch {
-					if err := s.launch(); err != nil {
-						walk.MsgBox(w.mw, "Rage of Mages 2", err.Error(), walk.MsgBoxIconError)
-						return
-					}
-					w.mw.Close()
+				if !launch {
+					w.busy(false)
+					return
 				}
+				doLaunch = true
 			})
+			if !doLaunch {
+				return
+			}
+			w.mw.Synchronize(func() { w.playAndWatch(s) })
 		}()
 	}
 	err := MainWindow{
@@ -126,4 +160,34 @@ func runGUI(s *session) {
 		play.SetFont(font)
 	}
 	w.mw.Run()
+}
+
+// playAndWatch must run on the UI thread for Hide; waiting happens in a new goroutine.
+func (w *winUI) playAndWatch(s *session) {
+	before := core.SnapshotLogs(s.cfg.InstallDir)
+	proc, err := s.startGame()
+	if err != nil {
+		w.busy(false)
+		walk.MsgBox(w.mw, "Rage of Mages 2", err.Error(), walk.MsgBoxIconError)
+		return
+	}
+	w.status.SetText("Game running…")
+	w.mw.Hide()
+	go func() {
+		zipPath, err := s.watchGame(proc, before)
+		w.mw.Synchronize(func() {
+			if err != nil {
+				w.mw.Show()
+				w.busy(false)
+				walk.MsgBox(w.mw, "Rage of Mages 2", err.Error(), walk.MsgBoxIconError)
+				return
+			}
+			if zipPath != "" {
+				w.mw.Show()
+				w.busy(false)
+				showCrashDialog(w.mw, zipPath)
+			}
+			os.Exit(0)
+		})
+	}()
 }

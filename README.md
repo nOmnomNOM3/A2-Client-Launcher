@@ -7,7 +7,7 @@ and starts `allods2.exe -hat biffinboys.ddns.net`.
 ## For players
 1. Download `RoM2 Launcher.exe` (link on biffinboys.com/rom2) and put it anywhere, e.g. the Desktop.
 2. Run it. The game goes to `C:\Users\<you>\Games\Rage of Mages 2` unless you click **Change…**.
-3. Press **PLAY**. First run downloads the whole game; later runs take seconds.
+3. Press **PLAY**. First run downloads the whole game; later runs take seconds. The launcher hides while you play and exits when the game closes; if the game crashes it saves a report under `.a2launcher\crash\`.
 4. If the game acts strange, press **Repair files**. Your `allods2.cfg` and `ddraw.ini` settings are never overwritten.
 
 Windows SmartScreen may warn the first time (unsigned exe): click *More info → Run anyway*.
@@ -48,6 +48,7 @@ Remove a file from players: `--delete old.dll` (it is moved to the launcher's ba
   Replaced files go to `<game>\.a2launcher\backup\<time>` (last 3 kept).
 - Files in the game folder that are not in the list (saves, screenshots) are left alone.
 - Offline: the launcher offers to start the game with the files you have.
+- After PLAY the launcher hides and waits for `allods2.exe`. A normal exit closes the launcher silently. A crash (non-zero exit, `FATAL ERROR` / `can't load` in a new or changed log, or a brand-new log file) writes `.a2launcher\crash\<time>.zip` (exit code, recent `logs\*.log` / a2mgr logs, manifest version, hashes of exe/dll/world.res/ddraw.ini, Windows version — no chr/screenshots/cfg) and shows a dialog with an Open folder button.
 - Command line (testing): `"RoM2 Launcher.exe" -dir D:\Game -manifest http://... -repair -nolaunch -console`.
 
 ## Developers

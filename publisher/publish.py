@@ -9,6 +9,7 @@ Upload needs env vars R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_
 Only Python's standard library is needed, except signing (pip install cryptography).
 """
 import argparse, base64, datetime, hashlib, hmac, json, os, shutil, sys, urllib.error, urllib.parse, urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 SKIP_NAMES = {"thumbs.db", "desktop.ini", ".ds_store"}
 SKIP_DIRS = {".a2launcher", ".git"}
@@ -129,6 +130,31 @@ class R2:
             sys.exit(f"FAIL R2 {method} {key}: {e.code} {e.read()[:300]!r}")
 
 
+def filter_missing(r2, prefix, shas, workers=16, progress_every=500):
+    """HEAD-check objects in parallel; return shas that are not already on R2."""
+    shas = sorted(shas)
+    total = len(shas)
+    todo, exist = [], 0
+    done = 0
+
+    def check(sha):
+        return sha, r2.req("HEAD", prefix + "objects/" + sha) == 200
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(check, sha) for sha in shas]
+        for fut in as_completed(futures):
+            sha, exists = fut.result()
+            done += 1
+            if exists:
+                exist += 1
+            else:
+                todo.append(sha)
+            if done % progress_every == 0 or done == total:
+                print(f"checking {done}/{total}...", flush=True)
+    print(f"check done: {exist} already on R2, {len(todo)} to upload", flush=True)
+    return sorted(todo)
+
+
 def cmd_upload(a):
     man = os.path.join(a.out, "manifest.json")
     m = json.load(open(man))
@@ -136,18 +162,14 @@ def cmd_upload(a):
     if m.get("launcher"):
         shas.add(m["launcher"]["sha256"])
     prefix = a.prefix.strip("/") + "/"
-    r2 = None if not a.apply else R2()
-    todo = []
-    for sha in sorted(shas):
-        key = prefix + "objects/" + sha
-        if r2 and r2.req("HEAD", key) == 200:
-            continue
-        todo.append(sha)
-    size = sum(os.path.getsize(os.path.join(a.out, "objects", s)) for s in todo)
     if not a.apply:
+        size = sum(os.path.getsize(os.path.join(a.out, "objects", s)) for s in shas)
         print(f"DRY {len(shas)} objects (up to {size/1e6:.1f} MB; already-uploaded ones are skipped with --apply)"
               f" + manifest -> {prefix}. Add --apply to upload.")
         return
+    r2 = R2()
+    todo = filter_missing(r2, prefix, shas)
+    size = sum(os.path.getsize(os.path.join(a.out, "objects", s)) for s in todo)
     for i, sha in enumerate(todo, 1):
         body = open(os.path.join(a.out, "objects", sha), "rb").read()
         r2.req("PUT", prefix + "objects/" + sha, body, {"cache-control": "public, max-age=31536000, immutable"})

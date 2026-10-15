@@ -111,22 +111,44 @@ func (s *session) update(ctx context.Context, u ui, full bool) (restart bool, er
 	return false, nil
 }
 
-// launch starts the game. Without a manifest (offline) it uses defaults.
-func (s *session) launch() error {
+// startGame launches the game process without waiting.
+func (s *session) startGame() (*os.Process, error) {
 	exe, args := "allods2.exe", []string{"-hat", "biffinboys.ddns.net"}
 	if s.manifest != nil {
 		exe, args = s.manifest.Exe, s.manifest.Args
 	}
 	p := filepath.Join(s.cfg.InstallDir, filepath.FromSlash(exe))
 	if _, err := os.Stat(p); err != nil {
-		return fmt.Errorf("the game is not installed yet (%s missing). Click Play while online to download it", exe)
+		return nil, fmt.Errorf("the game is not installed yet (%s missing). Click Play while online to download it", exe)
 	}
 	cmd := exec.Command(p, args...)
 	cmd.Dir = s.cfg.InstallDir
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("could not start the game: %v", err)
+		return nil, fmt.Errorf("could not start the game: %v", err)
 	}
-	return cmd.Process.Release()
+	return cmd.Process, nil
+}
+
+// watchGame waits for the process, then returns a crash-report zip path if the
+// run looked like a crash. A clean exit returns ("", nil).
+func (s *session) watchGame(proc *os.Process, before map[string]core.LogStat) (string, error) {
+	state, err := proc.Wait()
+	code := 0
+	if state != nil {
+		code = state.ExitCode()
+	}
+	if err != nil && state == nil {
+		return "", fmt.Errorf("game process: %v", err)
+	}
+	ver := ""
+	if s.manifest != nil {
+		ver = s.manifest.Version
+	}
+	det := core.DetectCrash(s.cfg.InstallDir, code, before)
+	if !det.Crashed {
+		return "", nil
+	}
+	return core.WriteCrashReport(s.cfg.InstallDir, det, ver)
 }
 
 func restartSelf() {
