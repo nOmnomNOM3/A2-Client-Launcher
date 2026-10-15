@@ -42,6 +42,16 @@ type Manifest struct {
 	Delete   []string       `json:"delete,omitempty"` // files to remove (moved to backup)
 	Files    []ManifestFile `json:"files"`
 	Launcher *LauncherInfo  `json:"launcher,omitempty"`
+	// Packs are optional zip archives bundling many files for fast first installs.
+	Packs []Pack `json:"packs,omitempty"`
+}
+
+// Pack is a zip archive stored at <objects>/<sha256> holding the listed files
+// under their manifest paths.
+type Pack struct {
+	SHA256 string   `json:"sha256"`
+	Size   int64    `json:"size"`
+	Files  []string `json:"files"`
 }
 
 // ParseManifest decodes and validates a manifest. If pub is non-nil the
@@ -79,6 +89,16 @@ func ParseManifest(data, sig []byte, pub ed25519.PublicKey) (*Manifest, error) {
 			return nil, fmt.Errorf("%s is listed twice in the update list", f.Path)
 		}
 		seen[k] = true
+	}
+	for _, pk := range m.Packs {
+		if len(pk.SHA256) != 64 || strings.ToLower(pk.SHA256) != pk.SHA256 || pk.Size <= 0 {
+			return nil, errors.New("bad pack entry in the update list")
+		}
+		for _, f := range pk.Files {
+			if err := checkRel(f); err != nil {
+				return nil, err
+			}
+		}
 	}
 	for _, d := range m.Delete {
 		if err := checkRel(d); err != nil {

@@ -24,23 +24,8 @@ func Apply(ctx context.Context, root, manifestURL string, m *Manifest, p *Plan, 
 	if err := os.MkdirAll(tmp, 0o755); err != nil {
 		return fmt.Errorf("cannot write to the game folder %s: %v", root, err)
 	}
-	var done int64
-	for i, f := range p.Fetch {
-		pr.Status(fmt.Sprintf("Downloading %s (%d of %d)", f.Path, i+1, len(p.Fetch)))
-		u, err := m.ObjectURL(manifestURL, f.SHA256)
-		if err != nil {
-			return err
-		}
-		start := done
-		err = DownloadVerified(ctx, u, filepath.Join(tmp, f.SHA256+".part"), f.Size, f.SHA256, func(n int64) {
-			done += n
-			pr.Bytes(done, p.TotalBytes)
-		})
-		if err != nil {
-			return fmt.Errorf("downloading %s failed: %w", f.Path, err)
-		}
-		done = start + f.Size
-		pr.Bytes(done, p.TotalBytes)
+	if err := fetchAll(ctx, tmp, manifestURL, m, p.Fetch, pr); err != nil {
+		return err
 	}
 	if len(p.Fetch) == 0 && len(p.Delete) == 0 {
 		return nil

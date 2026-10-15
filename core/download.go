@@ -13,7 +13,20 @@ import (
 )
 
 // Client is the HTTP client used for all downloads.
-var Client = &http.Client{Timeout: 0}
+// One shared transport: keep-alive, HTTP/2, many idle connections per host.
+var Client = &http.Client{Timeout: 0, Transport: &http.Transport{
+	Proxy:                 http.ProxyFromEnvironment,
+	ForceAttemptHTTP2:     true,
+	MaxIdleConns:          64,
+	MaxIdleConnsPerHost:   32,
+	IdleConnTimeout:       90 * time.Second,
+	TLSHandshakeTimeout:   15 * time.Second,
+	ResponseHeaderTimeout: 60 * time.Second,
+	ExpectContinueTimeout: time.Second,
+}}
+
+// RetryBase is the first retry delay; it doubles on each attempt.
+var RetryBase = time.Second
 
 const userAgent = "A2-Client-Launcher"
 
@@ -50,12 +63,12 @@ func friendlyNet(err error) error {
 // onBytes is called with the number of new bytes written (may be nil).
 func DownloadVerified(ctx context.Context, url, dst string, size int64, sha string, onBytes func(int64)) error {
 	var lastErr error
-	for attempt := 0; attempt < 4; attempt++ {
+	for attempt := 0; attempt < 5; attempt++ {
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-time.After(time.Duration(attempt*2) * time.Second):
+			case <-time.After(RetryBase * time.Duration(1<<(attempt-1))):
 			}
 		}
 		lastErr = downloadOnce(ctx, url, dst, size, onBytes)

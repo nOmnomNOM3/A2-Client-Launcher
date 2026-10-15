@@ -8,7 +8,7 @@
 Upload needs env vars R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET.
 Only Python's standard library is needed, except signing (pip install cryptography).
 """
-import argparse, base64, datetime, hashlib, hmac, json, os, shutil, sys, urllib.error, urllib.parse, urllib.request
+import argparse, zipfile, base64, datetime, hashlib, hmac, json, os, shutil, sys, urllib.error, urllib.parse, urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 SKIP_NAMES = {"thumbs.db", "desktop.ini", ".ds_store"}
@@ -23,6 +23,42 @@ def sha256_file(p):
         for b in iter(lambda: f.read(1 << 20), b""):
             h.update(b)
     return h.hexdigest()
+
+
+PACK_TARGET = 64 * 1024 * 1024
+ZIP_DATE = (2020, 1, 1, 0, 0, 0)  # fixed, so identical content gives an identical pack
+
+
+def build_packs(stage, files, objdir, target=PACK_TARGET):
+    """Group files (sorted by path) into ~target-byte zips stored as objects/<sha256>.
+    Files bigger than target are left out (per-file download is as fast)."""
+    groups, cur, size = [], [], 0
+    for e in sorted(files, key=lambda x: x["path"].lower()):
+        if e["size"] >= target:
+            continue
+        if cur and size + e["size"] > target:
+            groups.append(cur); cur, size = [], 0
+        cur.append(e); size += e["size"]
+    if len(cur) > 1:
+        groups.append(cur)
+    packs, new = [], 0
+    for g in groups:
+        tmp = os.path.join(objdir, "pack.tmp")
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
+            for e in g:
+                zi = zipfile.ZipInfo(e["path"], ZIP_DATE)
+                zi.compress_type = zipfile.ZIP_DEFLATED
+                zi.external_attr = 0o644 << 16
+                with open(os.path.join(stage, e["path"]), "rb") as src, z.open(zi, "w") as dst:
+                    shutil.copyfileobj(src, dst, 1 << 20)
+        sha = sha256_file(tmp)
+        dst = os.path.join(objdir, sha)
+        if os.path.exists(dst):
+            os.remove(tmp)
+        else:
+            os.replace(tmp, dst); new += 1
+        packs.append({"sha256": sha, "size": os.path.getsize(dst), "files": [e["path"] for e in g]})
+    return packs, new
 
 
 def cmd_build(a):
@@ -52,8 +88,12 @@ def cmd_build(a):
             if not os.path.exists(dst):
                 shutil.copyfile(full, dst)
                 new += 1
+    packs, pnew = ([], 0) if a.no_packs else build_packs(stage, files, objdir)
+    new += pnew
     m = {"format": 1, "version": a.version, "news": a.news, "exe": a.exe,
          "args": ["-hat", a.hat], "objects": "objects/", "files": files}
+    if packs:
+        m["packs"] = packs
     if a.delete:
         m["delete"] = a.delete
     if a.launcher:
@@ -72,7 +112,7 @@ def cmd_build(a):
         with open(os.path.join(a.out, "manifest.json.sig"), "w") as f:
             f.write(base64.b64encode(key.sign(data)).decode())
     total = sum(x["size"] for x in files)
-    print(f"OK  {len(files)} files, {total/1e6:.1f} MB, {new} new objects, version {a.version}"
+    print(f"OK  {len(files)} files, {total/1e6:.1f} MB, {len(packs)} packs, {new} new objects, version {a.version}"
           + (", signed" if a.sign_key else ", NOT signed"))
     big = [x["path"] for x in files if x["size"] > 25_000_000]
     if big:
@@ -155,10 +195,14 @@ def filter_missing(r2, prefix, shas, workers=16, progress_every=500):
     return sorted(todo)
 
 
+MANIFEST_CC = "no-cache, max-age=0, must-revalidate"
+
+
 def cmd_upload(a):
     man = os.path.join(a.out, "manifest.json")
     m = json.load(open(man))
     shas = {f["sha256"] for f in m["files"]}
+    shas |= {p["sha256"] for p in m.get("packs", [])}
     if m.get("launcher"):
         shas.add(m["launcher"]["sha256"])
     prefix = a.prefix.strip("/") + "/"
@@ -177,9 +221,9 @@ def cmd_upload(a):
     # manifest last, so players never see a list pointing at missing files
     sig = man + ".sig"
     if os.path.exists(sig):
-        r2.req("PUT", prefix + "manifest.json.sig", open(sig, "rb").read(), {"cache-control": "no-cache"})
+        r2.req("PUT", prefix + "manifest.json.sig", open(sig, "rb").read(), {"cache-control": MANIFEST_CC})
     r2.req("PUT", prefix + "manifest.json", open(man, "rb").read(),
-           {"cache-control": "no-cache", "content-type": "application/json"})
+           {"cache-control": MANIFEST_CC, "content-type": "application/json"})
     print(f"OK  uploaded {len(todo)} new objects ({size/1e6:.1f} MB) + manifest, version {m.get('version')}")
 
 
@@ -192,7 +236,7 @@ def main():
     b.add_argument("--once", nargs="*", help="player-owned files (default: allods2.cfg ddraw.ini)")
     b.add_argument("--delete", nargs="*", help="files players should no longer have")
     b.add_argument("--launcher", help="new launcher exe for self-update"); b.add_argument("--launcher-version")
-    b.add_argument("--sign-key")
+    b.add_argument("--sign-key"); b.add_argument("--no-packs", action="store_true", help="skip pack archives")
     u = sp.add_parser("upload"); u.add_argument("out"); u.add_argument("--prefix", default="rom2/client")
     u.add_argument("--apply", action="store_true")
     k = sp.add_parser("keygen"); k.add_argument("keyfile")

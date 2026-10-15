@@ -42,5 +42,30 @@ class FilterMissingTests(unittest.TestCase):
         self.assertIn("3 already on R2, 0 to upload", buf.getvalue())
 
 
+class PackTests(unittest.TestCase):
+    def test_build_packs(self):
+        import tempfile, zipfile, os, hashlib
+        with tempfile.TemporaryDirectory() as d:
+            stage, out = os.path.join(d, "s"), os.path.join(d, "o")
+            os.makedirs(os.path.join(stage, "data")); os.makedirs(out)
+            files = []
+            for i in range(5):
+                p = f"data/f{i}.bin"; body = bytes([i]) * 40
+                open(os.path.join(stage, p), "wb").write(body)
+                files.append({"path": p, "size": 40, "sha256": hashlib.sha256(body).hexdigest()})
+            open(os.path.join(stage, "big"), "wb").write(b"x" * 200)
+            files.append({"path": "big", "size": 200, "sha256": "0" * 64})
+            packs, new = publish.build_packs(stage, files, out, target=100)
+            self.assertEqual([p["files"] for p in packs], [["data/f0.bin", "data/f1.bin"], ["data/f2.bin", "data/f3.bin"]])
+            for p in packs:
+                path = os.path.join(out, p["sha256"])
+                self.assertEqual(publish.sha256_file(path), p["sha256"])
+                with zipfile.ZipFile(path) as z:
+                    self.assertEqual(z.namelist(), p["files"])
+            again, new2 = publish.build_packs(stage, files, out, target=100)
+            self.assertEqual(again, packs)  # deterministic
+            self.assertEqual(new2, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
