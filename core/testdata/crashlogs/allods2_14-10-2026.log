@@ -1,0 +1,57 @@
+[14.10.2026 21:09:16] Rage of Mages II (v1.07)
+[14.10.2026 21:09:16] a2mgr (v1.13)/zxmgr (v2.0) started.
+[14.10.2026 21:09:16] arg: C:UsersStoneDownloadsa2 test clientallods2.exe
+[14.10.2026 21:09:16] arg: -hat
+[14.10.2026 21:09:16] arg: biffinboys.ddns.net
+[14.10.2026 21:09:19] Using hat address: 'biffinboys.ddns.net'
+[14.10.2026 21:09:32] stats_level: wrong row syntax (no `] #` found), failing open: '|[0:26] Easy|1.02|Garden v1.2|128x128|1|1|192.168.1.30:8001|'
+[14.10.2026 21:09:32] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:26] Medium|1.02|Warriors of Nord v3.1|128x128|1|0|192.168.1.30:8003|'
+[14.10.2026 21:09:32] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:26] Hard|1.02|Oasis v3.1|240x240|2|0|192.168.1.30:8005|'
+[14.10.2026 21:09:32] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:25] Horror|1.02|Crossroads of Mystery II|240x240|2|0|192.168.1.30:8007|'
+[14.10.2026 21:09:32] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:25] X-mas Reunion 2009|1.02|as Reunion 2009|240x240|3|0|192.168.1.30:8011|'
+[14.10.2026 21:09:32] stats_level: wrong row syntax (no `] #` found), failing open: '|[0:26] Easy|1.02|Garden v1.2|128x128|1|1|192.168.1.30:8001|'
+[14.10.2026 21:09:32] stats_level: wrong row syntax (no `] #` found), failing open: '|[0:26] Easy|1.02|Garden v1.2|128x128|1|1|192.168.1.30:8001|'
+[14.10.2026 21:09:32] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:26] Medium|1.02|Warriors of Nord v3.1|128x128|1|0|192.168.1.30:8003|'
+[14.10.2026 21:09:32] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:26] Hard|1.02|Oasis v3.1|240x240|2|0|192.168.1.30:8005|'
+[14.10.2026 21:09:32] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:25] Horror|1.02|Crossroads of Mystery II|240x240|2|0|192.168.1.30:8007|'
+[14.10.2026 21:09:32] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:25] X-mas Reunion 2009|1.02|as Reunion 2009|240x240|3|0|192.168.1.30:8011|'
+[14.10.2026 21:09:33] stats_level: wrong row syntax (no `] #` found), failing open: '|[0:26] Easy|1.02|Garden v1.2|128x128|1|1|192.168.1.30:8001|'
+[14.10.2026 21:09:33] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:26] Medium|1.02|Warriors of Nord v3.1|128x128|1|0|192.168.1.30:8003|'
+[14.10.2026 21:09:33] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:26] Hard|1.02|Oasis v3.1|240x240|2|0|192.168.1.30:8005|'
+[14.10.2026 21:09:33] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:25] Horror|1.02|Crossroads of Mystery II|240x240|2|0|192.168.1.30:8007|'
+[14.10.2026 21:09:33] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:25] X-mas Reunion 2009|1.02|as Reunion 2009|240x240|3|0|192.168.1.30:8011|'
+[14.10.2026 21:09:33] stats_level: wrong row syntax (no `] #` found), failing open: '|[0:26] Easy|1.02|Garden v1.2|128x128|1|1|192.168.1.30:8001|'
+[14.10.2026 21:09:33] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:26] Medium|1.02|Warriors of Nord v3.1|128x128|1|0|192.168.1.30:8003|'
+[14.10.2026 21:09:33] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:26] Hard|1.02|Oasis v3.1|240x240|2|0|192.168.1.30:8005|'
+[14.10.2026 21:09:33] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:25] Horror|1.02|Crossroads of Mystery II|240x240|2|0|192.168.1.30:8007|'
+[14.10.2026 21:09:33] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:25] X-mas Reunion 2009|1.02|as Reunion 2009|240x240|3|0|192.168.1.30:8011|'
+[14.10.2026 21:09:34] stats_level: wrong row syntax (no `] #` found), failing open: '|[0:26] Easy|1.02|Garden v1.2|128x128|1|1|192.168.1.30:8001|'
+[14.10.2026 21:09:34] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:26] Medium|1.02|Warriors of Nord v3.1|128x128|1|0|192.168.1.30:8003|'
+[14.10.2026 21:09:34] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:26] Hard|1.02|Oasis v3.1|240x240|2|0|192.168.1.30:8005|'
+[14.10.2026 21:09:34] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:25] Horror|1.02|Crossroads of Mystery II|240x240|2|0|192.168.1.30:8007|'
+[14.10.2026 21:09:34] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:25] X-mas Reunion 2009|1.02|as Reunion 2009|240x240|3|0|192.168.1.30:8011|'
+[14.10.2026 21:09:34] stats_level: wrong row syntax (no `] #` found), failing open: '|[0:26] Easy|1.02|Garden v1.2|128x128|1|1|192.168.1.30:8001|'
+[14.10.2026 21:09:34] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:26] Medium|1.02|Warriors of Nord v3.1|128x128|1|0|192.168.1.30:8003|'
+[14.10.2026 21:09:34] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:26] Hard|1.02|Oasis v3.1|240x240|2|0|192.168.1.30:8005|'
+[14.10.2026 21:09:34] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:25] Horror|1.02|Crossroads of Mystery II|240x240|2|0|192.168.1.30:8007|'
+[14.10.2026 21:09:34] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:25] X-mas Reunion 2009|1.02|as Reunion 2009|240x240|3|0|192.168.1.30:8011|'
+[14.10.2026 21:09:34] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:25] Horror|1.02|Crossroads of Mystery II|240x240|2|0|192.168.1.30:8007|'
+[14.10.2026 21:09:34] stats_level: wrong row syntax (no `] #` found), failing open: '|[0:26] Easy|1.02|Garden v1.2|128x128|1|1|192.168.1.30:8001|'
+[14.10.2026 21:09:34] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:26] Medium|1.02|Warriors of Nord v3.1|128x128|1|0|192.168.1.30:8003|'
+[14.10.2026 21:09:34] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:26] Hard|1.02|Oasis v3.1|240x240|2|0|192.168.1.30:8005|'
+[14.10.2026 21:09:34] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:25] Horror|1.02|Crossroads of Mystery II|240x240|2|0|192.168.1.30:8007|'
+[14.10.2026 21:09:34] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:25] X-mas Reunion 2009|1.02|as Reunion 2009|240x240|3|0|192.168.1.30:8011|'
+[14.10.2026 21:09:34] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:25] Horror|1.02|Crossroads of Mystery II|240x240|2|0|192.168.1.30:8007|'
+[14.10.2026 21:09:36] stats_level: wrong row syntax (no `] #` found), failing open: '|[0:26] Easy|1.02|Garden v1.2|128x128|1|1|192.168.1.30:8001|'
+[14.10.2026 21:09:36] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:26] Medium|1.02|Warriors of Nord v3.1|128x128|1|0|192.168.1.30:8003|'
+[14.10.2026 21:09:36] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:26] Hard|1.02|Oasis v3.1|240x240|2|0|192.168.1.30:8005|'
+[14.10.2026 21:09:36] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:25] Horror|1.02|Crossroads of Mystery II|240x240|2|0|192.168.1.30:8007|'
+[14.10.2026 21:09:36] stats_level: wrong row syntax (no `] #` found), failing open: '|[1:25] X-mas Reunion 2009|1.02|as Reunion 2009|240x240|3|0|192.168.1.30:8011|'
+[14.10.2026 21:11:10] Camping in 30 second(s)
+[14.10.2026 21:11:15] Camping in 25 second(s)
+[14.10.2026 21:11:20] Camping in 20 second(s)
+[14.10.2026 21:11:25] Camping in 15 second(s)
+[14.10.2026 21:11:31] Camping in 10 second(s)
+[14.10.2026 21:11:35] Camping in 5 second(s)
+[14.10.2026 21:11:40] Camping in 0 second(s)
+[14.10.2026 21:12:02] a2mgr closed.

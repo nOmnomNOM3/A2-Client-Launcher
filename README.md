@@ -50,7 +50,7 @@ Remove a file from players: `--delete old.dll` (it is moved to the launcher's ba
   Replaced files go to `<game>\.a2launcher\backup\<time>` (last 3 kept).
 - Files in the game folder that are not in the list (saves, screenshots) are left alone.
 - Offline: the launcher offers to start the game with the files you have.
-- After PLAY the launcher hides and waits for `allods2.exe`. A normal exit closes the launcher silently. A crash (non-zero exit, `FATAL ERROR` / `can't load` in a new or changed log, or a brand-new log file) writes `.a2launcher\crash\<time>.zip` (exit code, recent `logs\*.log` / a2mgr logs, manifest version, hashes of exe/dll/world.res/ddraw.ini, Windows version — no chr/screenshots/cfg) and asks whether to open that folder.
+- After PLAY the launcher hides and waits for `allods2.exe`. A normal exit closes the launcher silently. A crash (non-zero exit, or the newest new/changed `allods2_*.log` has no `a2mgr closed.` line after its last `started.` line; a new day's log alone is not a crash) writes `.a2launcher\crash\<time>.zip` (exit code, recent `logs\*.log` / a2mgr logs, manifest version, hashes of exe/dll/world.res/ddraw.ini, Windows version — no chr/screenshots/cfg) and asks whether to open that folder.
 - Command line (testing): `"RoM2 Launcher.exe" -dir D:\Game -manifest http://... -repair -nolaunch -console`.
 
 ## Developers

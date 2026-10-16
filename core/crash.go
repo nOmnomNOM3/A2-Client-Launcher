@@ -106,12 +106,16 @@ type CrashResult struct {
 }
 
 // DetectCrash decides whether the game run looks like a crash.
-// A crash is: non-zero exit, FATAL ERROR / "can't load" in a new/changed log,
-// or a brand-new log file written during the session.
+// A crash is: a non-zero exit code, OR the newest new/changed allods2 log
+// (a2mgr writes logs/allods2_DD-MM-YYYY.log) has no "a2mgr closed." line
+// after its latest "started." line. A brand-new log file on its own (e.g. a
+// new day's log) is NOT a crash. FATAL ERROR / "can't load" lines are still
+// recorded in MarkerHits for the report but do not by themselves mean a crash.
 func DetectCrash(root string, exitCode int, before map[string]LogStat) CrashResult {
 	r := CrashResult{ExitCode: exitCode}
-	afterFiles := listLogFiles(root)
-	for _, p := range afterFiles {
+	var newestA2 string
+	var newestTime time.Time
+	for _, p := range listLogFiles(root) {
 		rel, err := filepath.Rel(root, p)
 		if err != nil {
 			continue
@@ -123,33 +127,50 @@ func DetectCrash(root string, exitCode int, before map[string]LogStat) CrashResu
 		}
 		sha, _ := fileSHA256(p)
 		prev, ok := before[rel]
-		changed := !ok || prev.Size != st.Size() || prev.SHA != sha
-		if !changed {
+		if ok && prev.Size == st.Size() && prev.SHA == sha {
 			continue
 		}
 		r.NewOrChanged = append(r.NewOrChanged, rel)
-		if !ok {
-			// Brand-new log file during the session.
-			if r.Reason == "" {
-				r.Crashed = true
-				r.Reason = "new log file " + rel
-			}
-		}
 		if logHasMarker(p) {
 			r.MarkerHits = append(r.MarkerHits, rel)
+		}
+		if strings.HasPrefix(strings.ToLower(filepath.Base(rel)), "allods2") {
+			if newestA2 == "" || st.ModTime().After(newestTime) ||
+				(st.ModTime().Equal(newestTime) && rel > newestA2) {
+				newestA2, newestTime = rel, st.ModTime()
+			}
 		}
 	}
 	if exitCode != 0 {
 		r.Crashed = true
 		r.Reason = fmt.Sprintf("exit code %d", exitCode)
+		return r
 	}
-	if len(r.MarkerHits) > 0 {
+	if newestA2 != "" && !logClosedCleanly(filepath.Join(root, filepath.FromSlash(newestA2))) {
 		r.Crashed = true
-		if !strings.HasPrefix(r.Reason, "exit code") {
-			r.Reason = "FATAL ERROR / can't load in " + r.MarkerHits[0]
-		}
+		r.Reason = "no 'a2mgr closed.' after last start in " + newestA2
 	}
 	return r
+}
+
+// logClosedCleanly reports whether the log has an "a2mgr closed." line after
+// its latest "started." line. A log with no "started." line is treated as
+// clean only if it has a closed line.
+func logClosedCleanly(p string) bool {
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return false
+	}
+	lastStart, lastClosed := -1, -1
+	for i, line := range strings.Split(string(b), "\n") {
+		l := strings.ToLower(strings.TrimSpace(line))
+		if strings.HasSuffix(l, "a2mgr closed.") {
+			lastClosed = i
+		} else if strings.HasSuffix(l, "started.") {
+			lastStart = i
+		}
+	}
+	return lastClosed >= 0 && lastClosed > lastStart
 }
 
 func logHasMarker(p string) bool {
