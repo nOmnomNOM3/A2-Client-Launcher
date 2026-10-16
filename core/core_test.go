@@ -226,3 +226,14 @@ func TestManifestJSONRoundTrip(t *testing.T) {
 }
 
 var time0 = time.Unix(0, 0)
+
+func TestGameInstalled(t *testing.T) {
+	d := t.TempDir()
+	if GameInstalled(d) || GameInstalled("") {
+		t.Fatal("empty dir counted as installed")
+	}
+	os.WriteFile(filepath.Join(d, "allods2.exe"), []byte("x"), 0o644)
+	if !GameInstalled(d) {
+		t.Fatal("allods2.exe not detected")
+	}
+}

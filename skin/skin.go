@@ -61,6 +61,7 @@ type State struct {
 	News     string
 	Status   string
 	Folder   string  // game folder, shown under the news
+	Fresh    bool    // no game in Folder yet: the Repair button reads "Install"
 	Version  string  // launcher version, shown bottom-left of the news panel
 	Progress float64 // 0..1; <0 hides the knob
 	Busy     bool    // disables the buttons
@@ -301,7 +302,7 @@ func RenderOps(st State) (*image.RGBA, []TextOp) {
 	drawBar(im, st.Progress)
 
 	for id, r := range pageButtons(st.Page) {
-		drawButton(im, r, buttonText[id], id == Play || id == Save, st.Busy && id != Exit, st.Hover == id, st.Pressed == id)
+		drawButton(im, r, ButtonLabel(st, id), id == Play || id == Save, st.Busy && id != Exit, st.Hover == id, st.Pressed == id)
 	}
 	if st.Version != "" {
 		v := "v" + st.Version
@@ -619,4 +620,13 @@ func Shape(im *image.RGBA) []image.Rectangle {
 		}
 	}
 	return out
+}
+
+// ButtonLabel is the text on main-page button id: Repair reads "Install"
+// when the folder has no game yet.
+func ButtonLabel(st State, id int) string {
+	if id == Repair && st.Fresh {
+		return "Install"
+	}
+	return buttonText[id]
 }

@@ -266,6 +266,7 @@ func (w *winUI) Bytes(done, total int64) {
 func (w *winUI) busy(b bool) { w.st.Busy = b; w.redraw() }
 
 func (w *winUI) redraw() {
+	w.st.Fresh = !core.GameInstalled(w.st.Folder)
 	im, ops := skin.RenderOps(w.st)
 	w.frame, w.ops = toBGRA(im, w.scale), ops
 	pInvalidateRect.Call(w.hwnd, 0, 0)

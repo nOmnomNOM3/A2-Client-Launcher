@@ -56,3 +56,15 @@ func TestSettingsHitTest(t *testing.T) {
 		t.Fatal("page buttons")
 	}
 }
+
+func TestRepairReadsInstallWhenFresh(t *testing.T) {
+	if got := ButtonLabel(State{Fresh: true}, Repair); got != "Install" {
+		t.Fatalf("fresh: %q", got)
+	}
+	if got := ButtonLabel(State{}, Repair); got != "Repair" {
+		t.Fatalf("installed: %q", got)
+	}
+	if got := ButtonLabel(State{Fresh: true}, Play); got != "PLAY" {
+		t.Fatalf("play: %q", got)
+	}
+}

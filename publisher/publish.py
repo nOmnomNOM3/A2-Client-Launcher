@@ -12,7 +12,16 @@ import argparse, zipfile, base64, datetime, hashlib, hmac, json, os, shutil, sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 SKIP_NAMES = {"thumbs.db", "desktop.ini", ".ds_store"}
-SKIP_DIRS = {".a2launcher", ".git"}
+SKIP_DIRS = {".a2launcher", ".git", "logs", "screenshots"}
+SKIP_EXTS = (".lnk", ".url", ".log", ".tmp")
+# Files allods2.exe / a2mgr.dll open by name. The exe mounts the .res archives
+# directly; a missing speech/video/music.res let the game start but crashed it
+# on entering a map (2026-10-15). graphics.res is not opened by this exe (it
+# reads data/graphics), so it is not required.
+REQUIRED_FILES = ["allods2.exe", "a2mgr.dll", "ddraw.dll", "ddraw.ini", "smackw32.dll",
+                  "scenario.dll", "main.res", "patch.res", "world.res", "locale.res",
+                  "scenario.res", "sfx.res", "movies.res", "speech.res", "video.res",
+                  "music.res"]
 # Player-owned files: installed once, never overwritten.
 DEFAULT_ONCE = ["allods2.cfg", "ddraw.ini"]
 
@@ -72,7 +81,8 @@ def cmd_build(a):
     for root, dirs, names in os.walk(stage):
         dirs[:] = sorted(d for d in dirs if d.lower() not in SKIP_DIRS)
         for n in sorted(names):
-            if n.lower() in SKIP_NAMES:
+            if n.lower() in SKIP_NAMES or n.lower().endswith(SKIP_EXTS):
+                print(f"SKIP {os.path.relpath(os.path.join(root, n), stage)}")
                 continue
             full = os.path.join(root, n)
             rel = os.path.relpath(full, stage).replace(os.sep, "/")
@@ -88,6 +98,12 @@ def cmd_build(a):
             if not os.path.exists(dst):
                 shutil.copyfile(full, dst)
                 new += 1
+    missing = [r for r in REQUIRED_FILES if r.lower() not in seen]
+    if missing:
+        msg = "required game files missing from " + stage + ": " + ", ".join(missing)
+        if not a.allow_missing:
+            sys.exit("FAIL " + msg + "\n     (copy them from the full client, or pass --allow-missing to publish anyway)")
+        print("WARN " + msg)
     packs, pnew = ([], 0) if a.no_packs else build_packs(stage, files, objdir)
     new += pnew
     m = {"format": 1, "version": a.version, "news": a.news, "exe": a.exe,
@@ -237,6 +253,7 @@ def main():
     b.add_argument("--delete", nargs="*", help="files players should no longer have")
     b.add_argument("--launcher", help="new launcher exe for self-update"); b.add_argument("--launcher-version")
     b.add_argument("--sign-key"); b.add_argument("--no-packs", action="store_true", help="skip pack archives")
+    b.add_argument("--allow-missing", action="store_true", help="publish even if REQUIRED_FILES are missing")
     u = sp.add_parser("upload"); u.add_argument("out"); u.add_argument("--prefix", default="rom2/client")
     u.add_argument("--apply", action="store_true")
     k = sp.add_parser("keygen"); k.add_argument("keyfile")

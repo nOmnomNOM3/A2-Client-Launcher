@@ -80,3 +80,12 @@ func probeWritable(dir string) error {
 	}
 	return os.Remove(dir)
 }
+
+// GameInstalled reports whether dir already holds a game (allods2.exe).
+func GameInstalled(dir string) bool {
+	if dir == "" {
+		return false
+	}
+	fi, err := os.Stat(filepath.Join(dir, "allods2.exe"))
+	return err == nil && !fi.IsDir()
+}
