@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -19,7 +20,44 @@ var (
 	version     = "0.0.0-dev"
 	manifestURL = "https://files.biffinboys.com/rom2/client/manifest.json"
 	publicKey   = "" // base64 ed25519 public key; when set, unsigned manifests are refused
+	// requireLauncherSig = "1" (set by release builds made with the signing
+	// key) refuses GitHub self-updates that lack a valid ed25519 signature.
+	requireLauncherSig = ""
 )
+
+// selfUpdatedEnv is set for the restarted launcher to the tag it updated to,
+// so a release whose exe reports the wrong version cannot cause a restart loop.
+const selfUpdatedEnv = "A2LAUNCHER_SELFUPDATED"
+
+// githubSelfUpdate checks the newest GitHub release and, if it is a newer
+// launcher, installs it. It returns the new tag when the caller should
+// restart. Any failure is logged and ignored so the launcher carries on.
+func (s *session) githubSelfUpdate(ctx context.Context, status func(string)) string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	root := s.cfg.InstallDir
+	logf := func(format string, a ...any) { core.Logf(root, format, a...) }
+	pub, err := pubKey()
+	if err != nil {
+		logf("self-update: %v", err)
+		return ""
+	}
+	tag, err := core.GitHubSelfUpdate(ctx, exe, core.GHUpdate{
+		Current:    version,
+		PubKey:     pub,
+		RequireSig: requireLauncherSig == "1",
+		SkipTag:    os.Getenv(selfUpdatedEnv),
+		Log:        logf,
+		Status:     status,
+	})
+	if err != nil {
+		logf("%v", err)
+		return ""
+	}
+	return tag
+}
 
 type ui interface {
 	core.Progress
@@ -28,8 +66,9 @@ type ui interface {
 
 // session holds one check/update run.
 type session struct {
-	cfg      core.Config
-	manifest *core.Manifest
+	cfg        core.Config
+	manifest   *core.Manifest
+	restartTag string // version the launcher just updated itself to
 }
 
 func (s *session) url() string {
@@ -75,13 +114,18 @@ func (s *session) update(ctx context.Context, u ui, full bool) (restart bool, er
 	s.manifest = m
 	u.News(m.News)
 
-	if exe, err := os.Executable(); err == nil && m.Launcher != nil && core.NewerVersion(m.Launcher.Version, version) {
-		u.Status("Updating the launcher…")
+	if exe, err := os.Executable(); err == nil && m.Launcher != nil && !core.IsDevVersion(version) && core.NewerVersion(m.Launcher.Version, version) {
+		u.Status("Updating launcher…")
 		ok, err := core.SelfUpdate(ctx, exe, s.url(), m.Launcher, version)
+		if errors.Is(err, core.ErrNotWritable) {
+			core.Logf(s.cfg.InstallDir, "self-update: launcher folder not writable (Program Files?); skipping")
+			err = nil
+		}
 		if err != nil {
 			return false, fmt.Errorf("launcher self-update failed: %v", err)
 		}
 		if ok {
+			s.restartTag = m.Launcher.Version
 			return true, nil
 		}
 	}
@@ -230,9 +274,17 @@ func (s *session) watchGame(r *gameRun, exited bool, res exitResult, before map[
 	return core.WriteCrashReport(s.cfg.InstallDir, det, ver)
 }
 
-func restartSelf() {
+// restartSelf starts the (new) launcher exe with the same arguments and exits.
+// tag, when set, is passed to the child as the self-update loop guard.
+func (s *session) restartSelf(tag string) {
 	exe, _ := os.Executable()
-	exec.Command(exe, os.Args[1:]...).Start()
+	cmd := exec.Command(exe, os.Args[1:]...)
+	if tag != "" {
+		cmd.Env = append(os.Environ(), selfUpdatedEnv+"="+tag)
+	}
+	if err := cmd.Start(); err != nil {
+		core.Logf(s.cfg.InstallDir, "self-update: restart failed: %v", err)
+	}
 	os.Exit(0)
 }
 

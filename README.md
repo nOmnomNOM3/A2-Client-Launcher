@@ -23,6 +23,8 @@ Windows SmartScreen may warn the first time (unsigned exe): click *More info →
    `pip install cryptography` then `python publisher\publish.py keygen C:\rom2keys\launcher.key`.
    Back up that file privately. Put the printed PUBLIC KEY in GitHub → repo → Settings →
    Secrets and variables → Actions → *New secret* `LAUNCHER_PUBKEY`.
+   Also add the *contents* of the key file as secret `LAUNCHER_SIGNING_KEY` so releases are
+   signed for launcher self-update (see [docs/selfupdate.md](docs/selfupdate.md)).
 4. **Build the launcher**: GitHub → Releases → *Draft a new release*, tag `v1.0.0`, Publish.
    About 2 minutes later `RoM2 Launcher.exe` is attached to the release.
 
@@ -37,8 +39,10 @@ python publisher\publish.py upload publish-out --apply    (uploads; the file lis
 ```
 Players get it next time they press PLAY. The server needs the same `world.res` etc.
 
-To push a new launcher version: make a new GitHub release (e.g. `v1.0.1`), download the exe, and add
-`--launcher "RoM2 Launcher.exe" --launcher-version 1.0.1` to the build command. Launchers update themselves.
+To push a new launcher version: publish a new GitHub release (e.g. `v1.3.1`). Launchers from v1.3.1 on
+check GitHub at startup and update themselves ([docs/selfupdate.md](docs/selfupdate.md)). Launchers older
+than that (v1.3.0 and before) only update through the file list: download the exe and add
+`--launcher "RoM2 Launcher.exe" --launcher-version 1.3.1` to the build command.
 
 Remove a file from players: `--delete old.dll` (it is moved to the launcher's backup, not destroyed).
 

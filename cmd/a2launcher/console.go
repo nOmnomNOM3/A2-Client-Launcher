@@ -25,9 +25,12 @@ func (c *consoleUI) News(t string) {
 
 // runConsole: a2launcher -console [-repair] [-dir PATH] [-nolaunch]
 func runConsole(s *session, repair, noLaunch bool) int {
+	if tag := s.githubSelfUpdate(context.Background(), (&consoleUI{}).Status); tag != "" {
+		s.restartSelf(tag)
+	}
 	restart, err := s.update(context.Background(), &consoleUI{}, repair)
 	if restart {
-		restartSelf()
+		s.restartSelf(s.restartTag)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)

@@ -21,10 +21,33 @@ jobs:
           VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || '0.0.0-dev' }}
           PUBKEY: ${{ secrets.LAUNCHER_PUBKEY }}
           MANIFEST_URL: ${{ vars.MANIFEST_URL }}
-        run: VERSION="${VERSION#v}" ./build.sh
+          HAS_SIGNING_KEY: ${{ secrets.LAUNCHER_SIGNING_KEY != '' }}
+        run: |
+          # Release builds made with the signing key only accept signed self-updates.
+          if [ "${{ github.event_name }}" = release ] && [ "$HAS_SIGNING_KEY" = true ]; then export REQUIRE_LAUNCHER_SIG=1; fi
+          VERSION="${VERSION#v}" ./build.sh
       - uses: actions/upload-artifact@v4
         with: { name: launcher, path: dist/*.exe }
+      - name: sign for self-update
+        if: github.event_name == 'release'
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          LAUNCHER_SIGNING_KEY: ${{ secrets.LAUNCHER_SIGNING_KEY }}
+          PUBKEY: ${{ secrets.LAUNCHER_PUBKEY }}
+        run: |
+          cd dist
+          sha256sum "RoM2 Launcher.exe" | cut -d' ' -f1 > RoM2.Launcher.exe.sha256
+          if [ -n "$LAUNCHER_SIGNING_KEY" ]; then
+            (cd .. && go run ./cmd/signlauncher -version "${TAG#v}" -in "dist/RoM2 Launcher.exe" -out dist/RoM2.Launcher.exe.sig)
+          else
+            echo "::warning::LAUNCHER_SIGNING_KEY secret not set; self-update falls back to SHA-256 only"
+          fi
       - name: attach to release
         if: github.event_name == 'release'
         env: { GH_TOKEN: '${{ github.token }}' }
-        run: gh release upload "${{ github.event.release.tag_name }}" "dist/RoM2 Launcher.exe" --clobber
+        run: |
+          # Signature and hash first, so launchers never see the exe without them.
+          extra=dist/RoM2.Launcher.exe.sha256
+          [ -f dist/RoM2.Launcher.exe.sig ] && extra="$extra dist/RoM2.Launcher.exe.sig"
+          gh release upload "${{ github.event.release.tag_name }}" $extra --clobber
+          gh release upload "${{ github.event.release.tag_name }}" "dist/RoM2 Launcher.exe" --clobber

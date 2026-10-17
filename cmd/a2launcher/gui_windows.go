@@ -701,6 +701,26 @@ func wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 	return r
 }
 
+// startupSelfUpdate checks GitHub for a newer launcher in the background
+// (buttons are disabled meanwhile; the API call times out after a few seconds).
+func (w *winUI) startupSelfUpdate() {
+	if !w.mu.TryLock() {
+		return
+	}
+	w.busy(true)
+	s := w.s
+	go func() {
+		defer w.mu.Unlock()
+		if tag := s.githubSelfUpdate(context.Background(), w.Status); tag != "" {
+			s.restartSelf(tag)
+		}
+		w.sync(func() {
+			w.st.Status = "Ready"
+			w.busy(false)
+		})
+	}()
+}
+
 func (w *winUI) run(full, launch bool) {
 	if !w.mu.TryLock() {
 		return
@@ -711,7 +731,7 @@ func (w *winUI) run(full, launch bool) {
 		defer w.mu.Unlock()
 		restart, err := s.update(context.Background(), w, full)
 		if restart {
-			restartSelf()
+			s.restartSelf(s.restartTag)
 		}
 		w.sync(func() {
 			if err != nil {
@@ -838,6 +858,7 @@ func runGUI(s *session) {
 	w.setShape()
 	w.redraw()
 	pShowWindow.Call(hwnd, 5)
+	w.startupSelfUpdate()
 
 	var m msgT
 	for {
