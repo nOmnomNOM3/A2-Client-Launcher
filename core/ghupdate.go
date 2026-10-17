@@ -184,7 +184,19 @@ func GitHubSelfUpdate(ctx context.Context, exe string, o GHUpdate) (string, erro
 	o.logf("self-update: %s -> %s (verify: %s)", o.Current, tag, map[bool]string{true: "ed25519 signature", false: "sha256 " + want}[sig != nil])
 	newPath := exe + ".new"
 	os.Remove(newPath)
-	got, err := downloadAll(ctx, a.URL, newPath, a.Size)
+	var got string
+	for attempt := 0; attempt < 3; attempt++ { // retry flaky connections
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+			case <-time.After(RetryBase * time.Duration(attempt)):
+			}
+		}
+		if got, err = downloadAll(ctx, a.URL, newPath, a.Size); err == nil || ctx.Err() != nil {
+			break
+		}
+		o.logf("self-update: download attempt %d failed: %v", attempt+1, err)
+	}
 	if err == nil && want != "" && got != want {
 		err = fmt.Errorf("downloaded launcher failed its checksum (got %s, want %s)", got, want)
 	}
