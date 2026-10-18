@@ -216,6 +216,9 @@ func (s *session) startGame() (*gameRun, error) {
 			core.Logf(dir, "launch: warning: %s not found in game folder", dll)
 		}
 	}
+	// Stale character cache files can crash character select; the game
+	// rebuilds them from the Hat on login. Failures are logged, never fatal.
+	core.Logf(dir, "a2c cache: cleared %d file(s)", core.ClearCharCache(dir))
 	cmd := exec.Command(exe, args...)
 	cmd.Dir = dir
 	if err := cmd.Start(); err != nil {

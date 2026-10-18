@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 SKIP_NAMES = {"thumbs.db", "desktop.ini", ".ds_store"}
 SKIP_DIRS = {".a2launcher", ".git", "logs", "screenshots"}
-SKIP_EXTS = (".lnk", ".url", ".log", ".tmp")
+SKIP_EXTS = (".lnk", ".url", ".log", ".tmp", ".a2c")  # .a2c = per-player character cache
 # Files allods2.exe / a2mgr.dll open by name. The exe mounts the .res archives
 # directly; a missing speech/video/music.res let the game start but crashed it
 # on entering a map (2026-10-15). graphics.res is not opened by this exe (it

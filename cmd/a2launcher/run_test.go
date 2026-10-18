@@ -86,3 +86,27 @@ func TestMissingExeAndRelativeDir(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestStartGameClearsCharCache(t *testing.T) {
+	s := fakeGame(t, "ls > files.txt\n")
+	dir := s.cfg.InstallDir
+	for _, f := range []string{"311777688826776.a2c", "famehall.dat", "hotkey.1.a2key"} {
+		os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644)
+	}
+	r, err := s.startGame()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.earlyCheck(r); err != nil {
+		t.Fatal(err)
+	}
+	seen, _ := os.ReadFile(filepath.Join(dir, "files.txt"))
+	if strings.Contains(string(seen), ".a2c") {
+		t.Fatalf("game saw a cache file:\n%s", seen)
+	}
+	for _, f := range []string{"famehall.dat", "hotkey.1.a2key"} {
+		if !strings.Contains(string(seen), f) {
+			t.Fatalf("%s missing at launch:\n%s", f, seen)
+		}
+	}
+}
