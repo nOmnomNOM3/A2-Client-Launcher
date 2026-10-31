@@ -97,6 +97,9 @@ func Diff(root string, m *Manifest, cache *HashCache, full bool, progress func(d
 		if progress != nil {
 			progress(i, len(m.Files), f.Path)
 		}
+		if IsCharCacheFile(f.Path) {
+			continue // client character cache: never restored from the manifest
+		}
 		if f.Once {
 			if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(f.Path))); err == nil {
 				p.Checked++
@@ -114,6 +117,9 @@ func Diff(root string, m *Manifest, cache *HashCache, full bool, progress func(d
 		}
 	}
 	for _, d := range m.Delete {
+		if IsCharCacheFile(d) {
+			continue // ClearCharCache handles these at launch
+		}
 		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(d))); err == nil {
 			p.Delete = append(p.Delete, d)
 		}

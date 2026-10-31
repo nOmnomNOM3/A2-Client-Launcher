@@ -42,6 +42,13 @@ class FilterMissingTests(unittest.TestCase):
         self.assertIn("3 already on R2, 0 to upload", buf.getvalue())
 
 
+class SkipTests(unittest.TestCase):
+    def test_char_cache_skipped(self):
+        self.assertTrue("311777688826776.a2c".endswith(publish.SKIP_EXTS))
+        self.assertFalse("hotkey.1.a2key".endswith(publish.SKIP_EXTS))
+        self.assertFalse("famehall.dat".endswith(publish.SKIP_EXTS))
+
+
 class PackTests(unittest.TestCase):
     def test_build_packs(self):
         import tempfile, zipfile, os, hashlib
