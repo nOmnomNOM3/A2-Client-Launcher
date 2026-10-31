@@ -136,7 +136,14 @@ func (s *session) update(ctx context.Context, u ui, full bool) (restart bool, er
 		return false, fmt.Errorf("cannot create the game folder %s: %v", root, err)
 	}
 	cache := core.LoadHashCache(root)
+	// Each UI call queues a full skin re-render on the UI thread; per-file
+	// updates (thousands of them) froze the window for ~12s. Throttle.
+	var last time.Time
 	plan, err := core.Diff(root, m, cache, full, func(done, total int, name string) {
+		if done != total && time.Since(last) < 100*time.Millisecond {
+			return
+		}
+		last = time.Now()
 		u.Status(fmt.Sprintf("Checking files %d/%d", done, total))
 		u.Bytes(int64(done), int64(total))
 	})
